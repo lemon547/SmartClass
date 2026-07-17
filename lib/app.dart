@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:smart_class/app_info.dart';
 import 'package:smart_class/providers/theme_controller.dart';
-import 'package:smart_class/screens/shell_screen.dart';
+import 'package:smart_class/screens/splash_screen.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
 class SmartClassApp extends StatelessWidget {
@@ -13,10 +15,20 @@ class SmartClassApp extends StatelessWidget {
     AppTheme.mode = themeCtrl.mode;
 
     return MaterialApp(
-      title: '班主任助手',
+      title: AppInfo.name,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,
-      home: ShellScreen(key: ValueKey(themeCtrl.mode.name)),
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [
+        Locale('zh', 'CN'),
+        Locale('en', 'US'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      home: const SplashGate(),
     );
   }
 }

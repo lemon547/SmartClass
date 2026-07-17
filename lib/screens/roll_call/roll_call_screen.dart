@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math';
 
 import 'package:smart_class/theme/app_icons.dart';
@@ -183,11 +183,11 @@ class _RollCallScreenState extends State<RollCallScreen> {
               children: [
                 if (AppTheme.showMascot && _spinName.isEmpty)
                   const Positioned(
-                    bottom: 8,
                     right: 8,
+                    bottom: 4,
                     child: PaddiMascot(
-                      asset: MascotAssets.sleepy,
-                      height: 72,
+                      asset: MascotAssets.emote,
+                      height: 40,
                     ),
                   ),
                 AnimatedSwitcher(

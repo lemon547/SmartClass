@@ -1,12 +1,17 @@
-﻿import 'package:smart_class/theme/app_icons.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/points/point_rules_screen.dart';
 import 'package:smart_class/theme/app_theme.dart';
+import 'package:smart_class/theme/mascot_assets.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/data_charts.dart';
+import 'package:smart_class/widgets/excel_import_sheet.dart';
+import 'package:smart_class/widgets/paddi_mascot.dart';
 
 class PointsScreen extends StatefulWidget {
   const PointsScreen({super.key});
@@ -49,10 +54,35 @@ class _PointsScreenState extends State<PointsScreen> {
           children: [
             LargeTitle(
               '积分',
-              trailing: IconButton(
-                tooltip: '撤销上一次',
-                onPressed: () => _undo(context),
-                icon: Icon(AppIcons.undo, color: AppTheme.blue),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Excel 批量加减分',
+                    onPressed: () => showExcelImportActions(
+                      context: context,
+                      title: '积分',
+                      downloadTemplate: () =>
+                          context.read<ClassController>().exportPointTemplateFile(),
+                      importBytes: (bytes, _) =>
+                          context.read<ClassController>().importPointsFromBytes(bytes),
+                    ),
+                    icon: const Icon(Icons.table_chart_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '积分规则',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const PointRulesScreen()),
+                    ),
+                    icon: Icon(AppIcons.sliders, color: AppTheme.blue),
+                  ),
+                  IconButton(
+                    tooltip: '撤销上一次',
+                    onPressed: () => _undo(context),
+                    icon: Icon(AppIcons.undo, color: AppTheme.blue),
+                  ),
+                ],
               ),
             ),
             SearchField(
@@ -100,14 +130,34 @@ class _PointsScreenState extends State<PointsScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 28),
                 children: [
+                  if (_query.isEmpty && ranked.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    ChartCard(
+                      title: '积分排行 Top 10',
+                      height: ranked.take(10).length * 28.0 + 8,
+                      child: HorizontalRankChart(
+                        items: [
+                          for (final s in ranked.take(10))
+                            ChartBarItem(
+                              label: s.name,
+                              value: ctrl.scoreForRank(s).toDouble(),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                   GroupedSection(
                     header: '排行',
                     children: [
                       if (ranked.isEmpty)
-                        Padding(
+                        const Padding(
                           padding: EdgeInsets.all(18),
-                          child: Text('暂无学生',
-                              style: TextStyle(color: AppTheme.tertiaryLabel)),
+                          child: Center(
+                            child: PaddiEmptyHint(
+                              message: '暂无学生',
+                              asset: MascotAssets.sleepy,
+                            ),
+                          ),
                         )
                       else
                         for (var i = 0; i < ranked.length; i++)
@@ -145,10 +195,14 @@ class _PointsScreenState extends State<PointsScreen> {
                     header: '最近记录',
                     children: [
                       if (ctrl.pointRecords.isEmpty)
-                        Padding(
+                        const Padding(
                           padding: EdgeInsets.all(18),
-                          child: Text('暂无记录',
-                              style: TextStyle(color: AppTheme.tertiaryLabel)),
+                          child: Center(
+                            child: PaddiEmptyHint(
+                              message: '暂无记录',
+                              asset: MascotAssets.classic,
+                            ),
+                          ),
                         )
                       else
                         for (final r in ctrl.pointRecords.take(30))

@@ -7,6 +7,7 @@ import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -37,9 +38,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           children: [
             LargeTitle(
               '考勤',
-              trailing: TextButton(
-                onPressed: () => ctrl.markAllPresent(),
-                child: const Text('全勤'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => showExcelImportActions(
+                      context: context,
+                      title: '考勤',
+                      downloadTemplate: () =>
+                          context.read<ClassController>().exportAttendanceTemplateFile(),
+                      importBytes: (bytes, _) =>
+                          context.read<ClassController>().importAttendanceFromBytes(bytes),
+                    ),
+                    child: const Text('Excel'),
+                  ),
+                  TextButton(
+                    onPressed: () => ctrl.markAllPresent(),
+                    child: const Text('全勤'),
+                  ),
+                ],
               ),
             ),
             Padding(

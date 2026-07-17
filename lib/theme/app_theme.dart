@@ -22,7 +22,7 @@ enum AppThemeMode {
         AppThemeMode.day => '清爽浅色',
         AppThemeMode.night => '深色护眼',
         AppThemeMode.eyeCare => '绿豆沙背景',
-        AppThemeMode.paddi => '白天配色 + 懒羊羊贴纸',
+        AppThemeMode.paddi => '少量贴纸点缀，图标与配色照常',
       };
 
   static AppThemeMode fromStorage(String? raw) => switch (raw) {

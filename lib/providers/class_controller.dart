@@ -6,8 +6,40 @@ import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:smart_class/data/class_repository.dart';
+import 'package:smart_class/features/class_features.dart';
 import 'package:smart_class/models/models.dart';
+import 'package:smart_class/services/batch_excels.dart';
+import 'package:smart_class/services/exam_score_excel.dart';
+import 'package:smart_class/services/excel_batch_helper.dart';
+import 'package:smart_class/services/semester_report_excel.dart';
+import 'package:smart_class/services/student_roster_excel.dart';
 import 'package:uuid/uuid.dart';
+
+class StudentImportResult {
+  const StudentImportResult({
+    required this.added,
+    required this.updated,
+    this.warnings = const [],
+  });
+
+  final int added;
+  final int updated;
+  final List<String> warnings;
+
+  int get total => added + updated;
+}
+
+class ExamScoreImportResult {
+  const ExamScoreImportResult({
+    required this.matched,
+    required this.skipped,
+    this.warnings = const [],
+  });
+
+  final int matched;
+  final int skipped;
+  final List<String> warnings;
+}
 
 class ClassController extends ChangeNotifier {
   ClassController(this._repo);
@@ -16,21 +48,37 @@ class ClassController extends ChangeNotifier {
   final _uuid = const Uuid();
 
   ClassProfile profile = const ClassProfile();
+  List<ManagedClass> classes = [];
+  ManagedClass? currentClass;
   List<Student> students = [];
   List<AttendanceRecord> selectedAttendance = [];
   List<PointRecord> pointRecords = [];
   List<DutyAssignment> dutyList = [];
   List<PointReasonPreset> pointPresets = [];
+  List<String> rolePresets = [];
   List<Settlement> settlements = [];
   List<CountdownItem> countdowns = [];
   List<FundRecord> fundRecords = [];
+  List<WorkLog> workLogs = [];
+  List<LessonUnit> lessonUnits = [];
+  Map<String, List<LessonFile>> lessonFilesByUnit = {};
+  Map<String, List<ExamFile>> examFilesByExam = {};
+  List<Exam> exams = [];
+  /// examId -> scores
+  Map<String, List<ExamScore>> examScoresByExam = {};
+  List<String> examCategories = [];
+  List<Semester> semesters = [];
+  Semester? activeSemester;
   List<Map<String, dynamic>> rollHistory = [];
   List<ClassNote> notes = [];
   List<HomeworkItem> homework = [];
   List<RewardItem> rewards = [];
   List<TimetableSlot> timetable = [];
+  List<SalaryRecord> salaryRecords = [];
   String selectedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
   bool loading = true;
+  /// 首屏必需数据已就绪（可离开启动页）
+  bool essentialReady = false;
   String? error;
 
   /// today | week | month | total
@@ -38,6 +86,21 @@ class ClassController extends ChangeNotifier {
   Map<String, int> periodDeltas = {};
 
   String get todayKey => DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+  TeacherRole get teacherRole =>
+      currentClass?.teacherRole ?? TeacherRole.homeroom;
+
+  bool get isHomeroom => teacherRole == TeacherRole.homeroom;
+
+  bool isFeatureVisible(String featureId) {
+    final cls = currentClass;
+    if (cls == null) return true;
+    return ClassFeatures.isVisible(
+      featureId: featureId,
+      role: cls.teacherRole,
+      overrides: cls.featureFlags,
+    );
+  }
 
   List<String> get pointReasons =>
       pointPresets.map((e) => e.reason).toList();
@@ -99,30 +162,222 @@ class ClassController extends ChangeNotifier {
 
   Future<void> load() async {
     loading = true;
+    essentialReady = false;
     error = null;
     notifyListeners();
     try {
+      await _refreshClasses();
       profile = _repo.loadProfile();
       students = await _repo.getStudents();
       selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
-      pointRecords = await _repo.getPointRecords(limit: 100);
-      dutyList = await _repo.getDuty();
       pointPresets = _repo.loadPointPresets();
-      settlements = await _repo.getSettlements();
+      rolePresets = _repo.loadRolePresets();
       countdowns = await _repo.getCountdowns();
-      fundRecords = await _repo.getFundRecords();
-      rollHistory = _repo.loadRollHistory();
-      notes = await _repo.getNotes();
-      homework = await _repo.getHomework(date: selectedDate);
-      rewards = await _repo.getRewards();
       timetable = await _repo.getTimetable();
-      await _refreshPeriodDeltas();
-    } catch (e) {
-      error = e.toString();
-    } finally {
+      dutyList = await _repo.getDuty();
+      homework = await _repo.getHomework(date: selectedDate);
+      activeSemester = await _repo.ensureActiveSemester();
+      essentialReady = true;
       loading = false;
       notifyListeners();
+
+      await _loadDeferred();
+    } catch (e) {
+      error = e.toString();
+      loading = false;
+      essentialReady = true;
+      notifyListeners();
     }
+  }
+
+  Future<void> _refreshClasses() async {
+    classes = await _repo.getClasses();
+    final id = _repo.currentClassId;
+    currentClass = null;
+    for (final c in classes) {
+      if (c.id == id) {
+        currentClass = c;
+        break;
+      }
+    }
+    currentClass ??= classes.isEmpty ? null : classes.first;
+  }
+
+  Future<void> switchClass(String id) async {
+    if (currentClass?.id == id) return;
+    await _repo.setCurrentClassId(id);
+    examScoresByExam = {};
+    await load();
+  }
+
+  Future<ManagedClass> createManagedClass({
+    required String name,
+    String grade = '',
+    String groupName = '',
+    TeacherRole teacherRole = TeacherRole.homeroom,
+    int seatRows = 6,
+    int seatCols = 8,
+    bool switchTo = true,
+  }) async {
+    final created = await _repo.createClass(
+      name: name,
+      grade: grade,
+      groupName: groupName,
+      teacherRole: teacherRole,
+      seatRows: seatRows,
+      seatCols: seatCols,
+    );
+    if (switchTo) {
+      await switchClass(created.id);
+    } else {
+      await _refreshClasses();
+      notifyListeners();
+    }
+    return created;
+  }
+
+  Future<void> updateManagedClass(ManagedClass next) async {
+    await _repo.upsertClass(next);
+    await _refreshClasses();
+    if (currentClass?.id == next.id) {
+      profile = next.asProfile;
+    }
+    notifyListeners();
+  }
+
+  Future<void> setFeatureFlag(String featureId, bool visible) async {
+    final cls = currentClass;
+    if (cls == null) return;
+    final flags = Map<String, bool>.from(cls.featureFlags);
+    flags[featureId] = visible;
+    await updateManagedClass(cls.copyWith(featureFlags: flags));
+  }
+
+  Future<void> deleteManagedClass(String id) async {
+    await _repo.deleteClass(id);
+    examScoresByExam = {};
+    await load();
+  }
+
+  Future<void> refreshSalary() async {
+    salaryRecords = await _repo.getSalaryRecords();
+    notifyListeners();
+  }
+
+  Future<void> upsertSalary(SalaryRecord record) async {
+    await _repo.upsertSalaryRecord(record);
+    await refreshSalary();
+  }
+
+  Future<void> deleteSalary(String id) async {
+    await _repo.deleteSalaryRecord(id);
+    await refreshSalary();
+  }
+
+  Future<void> _loadDeferred() async {
+    try {
+      pointRecords = await _repo.getPointRecords(limit: 80);
+      settlements = await _repo.getSettlements();
+      fundRecords = await _repo.getFundRecords();
+      workLogs = await _repo.getWorkLogs();
+      lessonUnits = await _repo.getLessonUnits();
+      final allLessonFiles = await _repo.getLessonFiles();
+      lessonFilesByUnit = {};
+      for (final f in allLessonFiles) {
+        lessonFilesByUnit.putIfAbsent(f.unitId, () => []).add(f);
+      }
+      exams = await _repo.getExams();
+      examCategories = _repo.loadExamCategories();
+      examScoresByExam = {}; // 成绩明细按需加载
+      final allExamFiles = await _repo.getExamFiles();
+      examFilesByExam = {};
+      for (final f in allExamFiles) {
+        examFilesByExam.putIfAbsent(f.examId, () => []).add(f);
+      }
+      semesters = await _repo.getSemesters();
+      activeSemester = null;
+      for (final s in semesters) {
+        if (s.isActive) {
+          activeSemester = s;
+          break;
+        }
+      }
+      activeSemester ??= await _repo.ensureActiveSemester();
+      rollHistory = _repo.loadRollHistory();
+      notes = await _repo.getNotes();
+      rewards = await _repo.getRewards();
+      salaryRecords = await _repo.getSalaryRecords();
+      await _refreshPeriodDeltas();
+      notifyListeners();
+    } catch (_) {
+      // 延迟加载失败不阻断主流程
+    }
+  }
+
+  /// 打开某次考试时再拉成绩，避免启动时全量查询
+  Future<void> ensureExamScores(String examId) async {
+    if (examScoresByExam.containsKey(examId)) return;
+    examScoresByExam[examId] = await _repo.getExamScores(examId);
+    notifyListeners();
+  }
+
+  Future<void> ensureAllExamScores() async {
+    var changed = false;
+    for (final e in exams) {
+      if (!examScoresByExam.containsKey(e.id)) {
+        examScoresByExam[e.id] = await _repo.getExamScores(e.id);
+        changed = true;
+      }
+    }
+    if (changed) notifyListeners();
+  }
+
+  Future<void> _refreshSemesters() async {
+    semesters = await _repo.getSemesters();
+    activeSemester = null;
+    for (final s in semesters) {
+      if (s.isActive) {
+        activeSemester = s;
+        break;
+      }
+    }
+  }
+
+  Future<void> renameActiveSemester(String title) async {
+    final active = activeSemester ?? await _repo.ensureActiveSemester();
+    await _repo.renameSemester(active.id, title);
+    await _refreshSemesters();
+    notifyListeners();
+  }
+
+  /// 结束本学期并存档，开启新学期（保留花名册，清空积分/考勤/成绩等）
+  Future<Semester> archiveSemesterAndStartNew({
+    String archiveTitle = '',
+    String newTitle = '',
+    String note = '',
+  }) async {
+    final next = await _repo.archiveAndStartNew(
+      archiveTitle: archiveTitle,
+      newTitle: newTitle,
+      note: note,
+    );
+    await load();
+    return next;
+  }
+
+  Future<void> deleteArchivedSemester(String id) async {
+    final s = await _repo.getSemester(id);
+    if (s == null || s.isActive) return;
+    await _repo.deleteSemester(id);
+    await _refreshSemesters();
+    notifyListeners();
+  }
+
+  Semester? semesterById(String id) {
+    for (final s in semesters) {
+      if (s.id == id) return s;
+    }
+    return null;
   }
 
   Future<void> setSelectedDate(DateTime date) async {
@@ -135,6 +390,7 @@ class ClassController extends ChangeNotifier {
   Future<void> updateProfile(ClassProfile next) async {
     profile = next;
     await _repo.saveProfile(next);
+    await _refreshClasses();
     notifyListeners();
   }
 
@@ -148,24 +404,27 @@ class ClassController extends ChangeNotifier {
     String? id,
     required String name,
     String studentNo = '',
-    String gender = '未知',
+    String gender = '',
     String phone = '',
     String note = '',
     String groupName = '',
     String role = '',
     String birthday = '',
+    String address = '',
   }) async {
     final existing = id == null ? null : studentById(id);
+    final genderNorm = gender.trim() == '未知' ? '' : gender.trim();
     final student = Student(
       id: id ?? _uuid.v4(),
       name: name.trim(),
       studentNo: studentNo.trim(),
-      gender: gender,
+      gender: genderNorm,
       phone: phone.trim(),
       note: note.trim(),
       groupName: groupName.trim(),
-      role: role.trim(),
+      role: Student.joinRoles(Student.splitRoles(role)),
       birthday: birthday.trim(),
+      address: address.trim(),
       points: existing?.points ?? 0,
       seatRow: existing?.seatRow,
       seatCol: existing?.seatCol,
@@ -184,6 +443,396 @@ class ClassController extends ChangeNotifier {
       );
     }
     await load();
+  }
+
+  Future<void> addRolePreset(String role) async {
+    final t = role.trim();
+    if (t.isEmpty) return;
+    if (rolePresets.contains(t)) return;
+    rolePresets = [...rolePresets, t];
+    await _repo.saveRolePresets(rolePresets);
+    notifyListeners();
+  }
+
+  /// 导出学生档案示例 Excel（WPS / Excel 可打开）。
+  Future<String> exportStudentTemplateFile() async {
+    final bytes = StudentRosterExcel.buildTemplateBytes();
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, '学生档案导入示例.xlsx'));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  /// 从 Excel / CSV 导入学生档案。有学号则更新同号学生，否则新增。
+  Future<StudentImportResult> importStudentsFromBytes(
+    Uint8List bytes, {
+    String? fileName,
+  }) async {
+    final parsed = StudentRosterExcel.parseBytes(bytes, fileName: fileName);
+    if (parsed.rows.isEmpty) {
+      return StudentImportResult(
+        added: 0,
+        updated: 0,
+        warnings: parsed.warnings.isEmpty
+            ? const ['没有可导入的数据']
+            : parsed.warnings,
+      );
+    }
+
+    var added = 0;
+    var updated = 0;
+    final byNo = <String, Student>{
+      for (final s in students)
+        if (s.studentNo.trim().isNotEmpty) s.studentNo.trim(): s,
+    };
+
+    for (final row in parsed.rows) {
+      final no = row.studentNo.trim();
+      final existing = no.isNotEmpty ? byNo[no] : null;
+      if (existing != null) {
+        await _repo.upsertStudent(
+          existing.copyWith(
+            name: row.name,
+            studentNo: no,
+            gender: row.gender,
+            phone: row.phone,
+            note: row.note,
+            groupName: row.groupName,
+            role: row.role,
+            birthday: row.birthday,
+            address: row.address,
+          ),
+        );
+        updated++;
+      } else {
+        final student = Student(
+          id: _uuid.v4(),
+          name: row.name,
+          studentNo: no,
+          gender: row.gender,
+          phone: row.phone,
+          note: row.note,
+          groupName: row.groupName,
+          role: row.role,
+          birthday: row.birthday,
+          address: row.address,
+          createdAt: DateTime.now(),
+        );
+        await _repo.upsertStudent(student);
+        if (no.isNotEmpty) byNo[no] = student;
+        added++;
+      }
+    }
+
+    await load();
+    return StudentImportResult(
+      added: added,
+      updated: updated,
+      warnings: parsed.warnings,
+    );
+  }
+
+  Student? _matchStudent({String studentNo = '', String name = ''}) {
+    final no = studentNo.trim();
+    if (no.isNotEmpty) {
+      for (final s in students) {
+        if (s.studentNo.trim() == no) return s;
+      }
+    }
+    final n = name.trim();
+    if (n.isNotEmpty) {
+      Student? hit;
+      for (final s in students) {
+        if (s.name.trim() == n) {
+          if (hit != null) return null; // 重名不匹配
+          hit = s;
+        }
+      }
+      return hit;
+    }
+    return null;
+  }
+
+  Future<String> _writeExcelTemplate(String fileName, Uint8List bytes) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, fileName));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  Future<String> exportAttendanceTemplateFile() =>
+      _writeExcelTemplate('考勤导入示例.xlsx', AttendanceBatchExcel.template());
+
+  Future<BatchImportResult> importAttendanceFromBytes(Uint8List bytes) async {
+    final parsed = AttendanceBatchExcel.parse(bytes);
+    var imported = 0;
+    var skipped = 0;
+    final warnings = [...parsed.warnings];
+    for (final row in parsed.rows) {
+      final s = _matchStudent(studentNo: row.studentNo, name: row.name);
+      if (s == null) {
+        skipped++;
+        warnings.add('未找到学生：${row.studentNo} ${row.name}');
+        continue;
+      }
+      await _repo.setAttendance(
+        studentId: s.id,
+        date: row.date,
+        status: row.status,
+        remark: row.remark,
+      );
+      imported++;
+    }
+    selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
+    notifyListeners();
+    return BatchImportResult(
+      imported: imported,
+      skipped: skipped,
+      warnings: warnings,
+    );
+  }
+
+  Future<String> exportTimetableTemplateFile() =>
+      _writeExcelTemplate('课程表导入示例.xlsx', TimetableBatchExcel.template());
+
+  Future<BatchImportResult> importTimetableFromBytes(Uint8List bytes) async {
+    final parsed = TimetableBatchExcel.parse(bytes);
+    var imported = 0;
+    for (final row in parsed.rows) {
+      if (row.subject.trim().isEmpty) {
+        await _repo.clearTimetableSlot(row.weekday, row.period);
+      } else {
+        await _repo.upsertTimetableSlot(
+          TimetableSlot(
+            id: _uuid.v4(),
+            weekday: row.weekday,
+            period: row.period,
+            subject: row.subject.trim(),
+          ),
+        );
+      }
+      imported++;
+    }
+    timetable = await _repo.getTimetable();
+    notifyListeners();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportDutyTemplateFile() =>
+      _writeExcelTemplate('值日导入示例.xlsx', DutyBatchExcel.template());
+
+  Future<BatchImportResult> importDutyFromBytes(Uint8List bytes) async {
+    final parsed = DutyBatchExcel.parse(bytes);
+    var imported = 0;
+    var skipped = 0;
+    final warnings = [...parsed.warnings];
+    for (final row in parsed.rows) {
+      final s = _matchStudent(studentNo: row.studentNo, name: row.name);
+      if (s == null) {
+        skipped++;
+        warnings.add('未找到学生：${row.studentNo} ${row.name}');
+        continue;
+      }
+      await _repo.setDuty(
+        weekday: row.weekday,
+        studentId: s.id,
+        task: row.task,
+      );
+      imported++;
+    }
+    dutyList = await _repo.getDuty();
+    notifyListeners();
+    return BatchImportResult(
+      imported: imported,
+      skipped: skipped,
+      warnings: warnings,
+    );
+  }
+
+  Future<String> exportFundTemplateFile() =>
+      _writeExcelTemplate('班费导入示例.xlsx', FundBatchExcel.template());
+
+  Future<BatchImportResult> importFundFromBytes(Uint8List bytes) async {
+    final parsed = FundBatchExcel.parse(bytes);
+    var imported = 0;
+    for (final row in parsed.rows) {
+      await _repo.upsertFundRecord(
+        FundRecord(
+          id: _uuid.v4(),
+          title: row.title,
+          amount: row.amount,
+          date: row.date,
+          note: row.note,
+          createdAt: DateTime.now(),
+        ),
+      );
+      imported++;
+    }
+    fundRecords = await _repo.getFundRecords();
+    notifyListeners();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportRewardTemplateFile() =>
+      _writeExcelTemplate('奖品导入示例.xlsx', RewardBatchExcel.template());
+
+  Future<BatchImportResult> importRewardFromBytes(Uint8List bytes) async {
+    final parsed = RewardBatchExcel.parse(bytes);
+    var imported = 0;
+    for (final row in parsed.rows) {
+      await _repo.upsertReward(
+        RewardItem(
+          id: _uuid.v4(),
+          name: row.name,
+          cost: row.cost,
+          stock: row.stock,
+        ),
+      );
+      imported++;
+    }
+    rewards = await _repo.getRewards();
+    notifyListeners();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportWorkLogTemplateFile() =>
+      _writeExcelTemplate('工作留痕导入示例.xlsx', WorkLogBatchExcel.template());
+
+  Future<BatchImportResult> importWorkLogFromBytes(Uint8List bytes) async {
+    final parsed = WorkLogBatchExcel.parse(bytes);
+    var imported = 0;
+    final now = DateTime.now();
+    for (final row in parsed.rows) {
+      await _repo.upsertWorkLog(
+        WorkLog(
+          id: _uuid.v4(),
+          category: row.category,
+          title: row.title,
+          content: row.content,
+          date: row.date,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      imported++;
+    }
+    workLogs = await _repo.getWorkLogs();
+    notifyListeners();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportLessonTemplateFile() =>
+      _writeExcelTemplate('授课进度导入示例.xlsx', LessonBatchExcel.template());
+
+  Future<BatchImportResult> importLessonFromBytes(Uint8List bytes) async {
+    final parsed = LessonBatchExcel.parse(bytes);
+    var imported = 0;
+    final now = DateTime.now();
+    var order = lessonUnits.length;
+    for (final row in parsed.rows) {
+      await _repo.upsertLessonUnit(
+        LessonUnit(
+          id: _uuid.v4(),
+          subject: row.subject,
+          title: row.title,
+          chapter: row.chapter,
+          progressNote: row.note,
+          status: row.status,
+          plannedDate: row.plannedDate,
+          taughtDate: row.taughtDate,
+          sortOrder: order++,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      imported++;
+    }
+    await _refreshLessons();
+    notifyListeners();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportCountdownTemplateFile() =>
+      _writeExcelTemplate('倒数日导入示例.xlsx', CountdownBatchExcel.template());
+
+  Future<BatchImportResult> importCountdownFromBytes(Uint8List bytes) async {
+    final parsed = CountdownBatchExcel.parse(bytes);
+    var imported = 0;
+    for (final row in parsed.rows) {
+      await _repo.upsertCountdown(
+        CountdownItem(
+          id: _uuid.v4(),
+          title: row.title,
+          targetDate: row.targetDate,
+          createdAt: DateTime.now(),
+        ),
+      );
+      imported++;
+    }
+    countdowns = await _repo.getCountdowns();
+    notifyListeners();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportSalaryTemplateFile() =>
+      _writeExcelTemplate('工资导入示例.xlsx', SalaryBatchExcel.template());
+
+  Future<BatchImportResult> importSalaryFromBytes(Uint8List bytes) async {
+    final parsed = SalaryBatchExcel.parse(bytes);
+    var imported = 0;
+    for (final row in parsed.rows) {
+      final net = SalaryRecord.computeNet(
+        base: row.base,
+        allowance: row.allowance,
+        deduction: row.deduction,
+      );
+      await _repo.upsertSalaryRecord(
+        SalaryRecord(
+          id: _uuid.v4(),
+          yearMonth: row.yearMonth,
+          title: row.title,
+          baseAmount: row.base,
+          allowance: row.allowance,
+          deduction: row.deduction,
+          netAmount: net,
+          note: row.note,
+          createdAt: DateTime.now(),
+        ),
+      );
+      imported++;
+    }
+    await refreshSalary();
+    return BatchImportResult(imported: imported, warnings: parsed.warnings);
+  }
+
+  Future<String> exportPointTemplateFile() =>
+      _writeExcelTemplate('积分导入示例.xlsx', PointBatchExcel.template());
+
+  Future<BatchImportResult> importPointsFromBytes(Uint8List bytes) async {
+    final parsed = PointBatchExcel.parse(bytes);
+    var imported = 0;
+    var skipped = 0;
+    final warnings = [...parsed.warnings];
+    for (final row in parsed.rows) {
+      final s = _matchStudent(studentNo: row.studentNo, name: row.name);
+      if (s == null) {
+        skipped++;
+        warnings.add('未找到学生：${row.studentNo} ${row.name}');
+        continue;
+      }
+      await _repo.addPoints(
+        studentId: s.id,
+        delta: row.delta,
+        reason: row.reason,
+      );
+      imported++;
+    }
+    await load();
+    return BatchImportResult(
+      imported: imported,
+      skipped: skipped,
+      warnings: warnings,
+    );
   }
 
   Future<void> removeStudent(String id) async {
@@ -250,6 +899,38 @@ class ClassController extends ChangeNotifier {
   Future<void> savePointPresets(List<PointReasonPreset> presets) async {
     pointPresets = presets;
     await _repo.savePointPresets(presets);
+    notifyListeners();
+  }
+
+  Future<void> upsertPointPreset({
+    String? previousReason,
+    required PointReasonPreset preset,
+  }) async {
+    final next = [...pointPresets];
+    if (previousReason != null) {
+      next.removeWhere((p) => p.reason == previousReason);
+    } else {
+      next.removeWhere((p) => p.reason == preset.reason);
+    }
+    next.add(preset);
+    next.sort((a, b) {
+      if (a.delta >= 0 && b.delta < 0) return -1;
+      if (a.delta < 0 && b.delta >= 0) return 1;
+      return a.reason.compareTo(b.reason);
+    });
+    await savePointPresets(next);
+  }
+
+  Future<void> deletePointPreset(String reason) async {
+    await savePointPresets([
+      for (final p in pointPresets)
+        if (p.reason != reason) p,
+    ]);
+  }
+
+  Future<void> resetPointPresets() async {
+    await _repo.clearPointPresets();
+    pointPresets = _repo.loadPointPresets();
     notifyListeners();
   }
 
@@ -341,26 +1022,37 @@ class ClassController extends ChangeNotifier {
   }
 
   CountdownItem? get nearestCountdown {
-    if (countdowns.isEmpty) return null;
-    final sorted = [...countdowns]
-      ..sort((a, b) => a.daysLeft.compareTo(b.daysLeft));
-    return sorted.first;
+    final upcoming = upcomingCountdowns;
+    return upcoming.isEmpty ? null : upcoming.first;
   }
 
-  int get fundBalance =>
-      fundRecords.fold(0, (sum, e) => sum + e.amount);
+  /// 未过期的倒数日，按剩余天数升序
+  List<CountdownItem> get upcomingCountdowns {
+    final list = countdowns.where((c) => c.daysLeft >= 0).toList()
+      ..sort((a, b) => a.daysLeft.compareTo(b.daysLeft));
+    return list;
+  }
 
   Future<void> saveCountdown({
     String? id,
     required String title,
     required String targetDate,
   }) async {
+    DateTime createdAt = DateTime.now();
+    if (id != null) {
+      for (final c in countdowns) {
+        if (c.id == id) {
+          createdAt = c.createdAt;
+          break;
+        }
+      }
+    }
     await _repo.upsertCountdown(
       CountdownItem(
         id: id ?? _uuid.v4(),
         title: title.trim(),
         targetDate: targetDate,
-        createdAt: DateTime.now(),
+        createdAt: createdAt,
       ),
     );
     countdowns = await _repo.getCountdowns();
@@ -372,6 +1064,9 @@ class ClassController extends ChangeNotifier {
     countdowns = await _repo.getCountdowns();
     notifyListeners();
   }
+
+  int get fundBalance =>
+      fundRecords.fold(0, (sum, e) => sum + e.amount);
 
   Future<void> saveFundRecord({
     String? id,
@@ -411,6 +1106,54 @@ class ClassController extends ChangeNotifier {
     );
     await file.writeAsString(text, encoding: utf8);
     return file.path;
+  }
+
+  /// 导出当前班本学期汇总 Excel（概况 / 学生 / 考勤 / 成绩 / 积分 / 留痕）
+  Future<String> exportClassSemesterReportFile() async {
+    await ensureAllExamScores();
+    final attendance = await _repo.getAllAttendance();
+    final points = await _repo.getPointRecords(limit: 20000);
+    final bytes = SemesterReportExcel.buildClassReport(
+      classTitle: profile.displayTitle,
+      semesterTitle: activeSemester?.title ?? '当前学期',
+      students: students,
+      attendance: attendance,
+      pointRecords: points,
+      exams: exams,
+      scoresByExam: examScoresByExam,
+      workLogs: workLogs,
+      fundRecords: fundRecords,
+    );
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final safeName = profile.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return _writeExcelTemplate('班级学期汇总_${safeName}_$stamp.xlsx', bytes);
+  }
+
+  /// 导出某学生本学期个人汇总 Excel
+  Future<String> exportStudentSemesterReportFile(String studentId) async {
+    final s = studentById(studentId);
+    if (s == null) throw StateError('学生不存在');
+    await ensureAllExamScores();
+    final attendance = await _repo.getAttendanceByStudent(studentId);
+    final points = await _repo.getPointRecordsByStudent(studentId);
+    final related = workLogs.where((w) {
+      return w.studentIdList.contains(studentId) ||
+          w.title.contains(s.name) ||
+          w.content.contains(s.name);
+    }).toList();
+    final bytes = SemesterReportExcel.buildStudentReport(
+      classTitle: profile.displayTitle,
+      semesterTitle: activeSemester?.title ?? '当前学期',
+      student: s,
+      attendance: attendance,
+      pointRecords: points,
+      exams: exams,
+      scoresByExam: examScoresByExam,
+      relatedWorkLogs: related,
+    );
+    final stamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final safe = s.name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return _writeExcelTemplate('学生学期汇总_${safe}_$stamp.xlsx', bytes);
   }
 
   Future<void> placeStudent(String studentId, int row, int col) async {
@@ -462,6 +1205,414 @@ class ClassController extends ChangeNotifier {
     await _repo.deleteNote(id);
     notes = await _repo.getNotes();
     notifyListeners();
+  }
+
+  List<WorkLog> workLogsOf(WorkLogCategory? category) {
+    if (category == null) return workLogs;
+    return workLogs.where((e) => e.category == category).toList();
+  }
+
+  int workLogCount(WorkLogCategory category) =>
+      workLogs.where((e) => e.category == category).length;
+
+  List<LessonFile> filesOfLesson(String unitId) =>
+      lessonFilesByUnit[unitId] ?? const [];
+
+  Future<void> _refreshLessons() async {
+    lessonUnits = await _repo.getLessonUnits();
+    final all = await _repo.getLessonFiles();
+    lessonFilesByUnit = {};
+    for (final f in all) {
+      lessonFilesByUnit.putIfAbsent(f.unitId, () => []).add(f);
+    }
+  }
+
+  Future<void> saveLessonUnit(LessonUnit unit) async {
+    await _repo.upsertLessonUnit(unit);
+    await _refreshLessons();
+    notifyListeners();
+  }
+
+  Future<void> deleteLessonUnit(String id) async {
+    await _repo.deleteLessonUnit(id);
+    await _refreshLessons();
+    notifyListeners();
+  }
+
+  Future<LessonFile?> attachLessonFile({
+    required String unitId,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    final file = await _repo.importLessonFile(
+      unitId: unitId,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    await _refreshLessons();
+    notifyListeners();
+    return file;
+  }
+
+  Future<void> deleteLessonFile(LessonFile file) async {
+    await _repo.deleteLessonFile(file);
+    await _refreshLessons();
+    notifyListeners();
+  }
+
+  Future<String> lessonFilePath(LessonFile file) =>
+      _repo.lessonFileAbsolutePath(file);
+
+  Future<void> saveWorkLog({
+    String? id,
+    required WorkLogCategory category,
+    required String title,
+    required String content,
+    required String date,
+    List<String> studentIds = const [],
+  }) async {
+    DateTime createdAt = DateTime.now();
+    if (id != null) {
+      for (final w in workLogs) {
+        if (w.id == id) {
+          createdAt = w.createdAt;
+          break;
+        }
+      }
+    }
+    await _repo.upsertWorkLog(
+      WorkLog(
+        id: id ?? _uuid.v4(),
+        category: category,
+        title: title.trim(),
+        content: content.trim(),
+        date: date,
+        studentIds: studentIds.join(','),
+        createdAt: createdAt,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    workLogs = await _repo.getWorkLogs();
+    notifyListeners();
+  }
+
+  Future<void> deleteWorkLog(String id) async {
+    await _repo.deleteWorkLog(id);
+    workLogs = await _repo.getWorkLogs();
+    notifyListeners();
+  }
+
+  List<Exam> examsOf(String? category) {
+    if (category == null || category.isEmpty) return exams;
+    return exams.where((e) => e.category == category).toList();
+  }
+
+  List<ExamScore> scoresOfExam(String examId) =>
+      examScoresByExam[examId] ?? const [];
+
+  Exam? examById(String id) {
+    for (final e in exams) {
+      if (e.id == id) return e;
+    }
+    return null;
+  }
+
+  Future<void> addExamCategory(String category) async {
+    final t = category.trim();
+    if (t.isEmpty) return;
+    if (examCategories.contains(t)) return;
+    examCategories = [...examCategories, t];
+    await _repo.saveExamCategories(examCategories);
+    notifyListeners();
+  }
+
+  Future<void> saveExam({
+    String? id,
+    required String title,
+    required String category,
+    required String examDate,
+    required List<String> subjects,
+    double fullScore = 100,
+    double passScore = 60,
+    String note = '',
+  }) async {
+    final now = DateTime.now();
+    DateTime createdAt = now;
+    if (id != null) {
+      final old = examById(id);
+      if (old != null) createdAt = old.createdAt;
+    }
+    final cat = category.trim().isEmpty ? '月考' : category.trim();
+    await addExamCategory(cat);
+    final exam = Exam(
+      id: id ?? _uuid.v4(),
+      title: title.trim(),
+      category: cat,
+      examDate: examDate,
+      subjects: [
+        for (final s in subjects)
+          if (s.trim().isNotEmpty) s.trim(),
+      ],
+      fullScore: fullScore,
+      passScore: passScore,
+      note: note.trim(),
+      createdAt: createdAt,
+      updatedAt: now,
+    );
+    await _repo.upsertExam(exam);
+    exams = await _repo.getExams();
+    examScoresByExam.putIfAbsent(exam.id, () => const []);
+    notifyListeners();
+  }
+
+  Future<void> deleteExam(String id) async {
+    await _repo.deleteExam(id);
+    exams = await _repo.getExams();
+    examScoresByExam.remove(id);
+    examFilesByExam.remove(id);
+    notifyListeners();
+  }
+
+  List<ExamFile> filesOfExam(String examId) =>
+      examFilesByExam[examId] ?? const [];
+
+  Future<void> _refreshExamFiles([String? examId]) async {
+    if (examId != null) {
+      examFilesByExam[examId] = await _repo.getExamFiles(examId: examId);
+    } else {
+      final all = await _repo.getExamFiles();
+      examFilesByExam = {};
+      for (final f in all) {
+        examFilesByExam.putIfAbsent(f.examId, () => []).add(f);
+      }
+    }
+  }
+
+  Future<void> attachExamFile({
+    required String examId,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    await _repo.importExamFile(
+      examId: examId,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    await _refreshExamFiles(examId);
+    notifyListeners();
+  }
+
+  Future<void> deleteExamFile(ExamFile file) async {
+    await _repo.deleteExamFile(file);
+    await _refreshExamFiles(file.examId);
+    notifyListeners();
+  }
+
+  Future<String> examFilePath(ExamFile file) =>
+      _repo.examFileAbsolutePath(file);
+
+  Future<void> saveExamScore({
+    required String examId,
+    required String studentId,
+    required Map<String, double> scores,
+    String remark = '',
+    String? id,
+  }) async {
+    String? existingId = id;
+    if (existingId == null) {
+      for (final s in scoresOfExam(examId)) {
+        if (s.studentId == studentId) {
+          existingId = s.id;
+          break;
+        }
+      }
+    }
+    await _repo.upsertExamScore(
+      ExamScore(
+        id: existingId ?? _uuid.v4(),
+        examId: examId,
+        studentId: studentId,
+        scores: scores,
+        remark: remark.trim(),
+      ),
+    );
+    examScoresByExam[examId] = await _repo.getExamScores(examId);
+    notifyListeners();
+  }
+
+  Future<String> exportExamTemplateFile(String examId) async {
+    final exam = examById(examId);
+    if (exam == null) throw StateError('考试不存在');
+    final bytes = ExamScoreExcel.buildTemplateBytes(
+      exam: exam,
+      students: students,
+    );
+    final dir = await getApplicationDocumentsDirectory();
+    final safe = exam.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final file = File(p.join(dir.path, '成绩模板_$safe.xlsx'));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  Future<ExamScoreImportResult> importExamScoresFromBytes(
+    String examId,
+    Uint8List bytes, {
+    String? fileName,
+  }) async {
+    final exam = examById(examId);
+    if (exam == null) {
+      return const ExamScoreImportResult(
+        matched: 0,
+        skipped: 0,
+        warnings: ['考试不存在'],
+      );
+    }
+    final parsed = ExamScoreExcel.parseBytes(
+      bytes,
+      subjects: exam.subjects,
+      fileName: fileName,
+    );
+    if (parsed.rows.isEmpty) {
+      return ExamScoreImportResult(
+        matched: 0,
+        skipped: 0,
+        warnings: parsed.warnings.isEmpty
+            ? const ['没有可导入的数据']
+            : parsed.warnings,
+      );
+    }
+
+    final byNo = <String, Student>{
+      for (final s in students)
+        if (s.studentNo.trim().isNotEmpty) s.studentNo.trim(): s,
+    };
+    final byName = <String, List<Student>>{};
+    for (final s in students) {
+      byName.putIfAbsent(s.name, () => []).add(s);
+    }
+
+    var matched = 0;
+    var skipped = 0;
+    final warnings = [...parsed.warnings];
+    final existingByStudent = <String, String>{
+      for (final s in scoresOfExam(examId)) s.studentId: s.id,
+    };
+
+    for (final row in parsed.rows) {
+      Student? stu;
+      final no = row.studentNo.trim();
+      if (no.isNotEmpty) stu = byNo[no];
+      if (stu == null) {
+        final list = byName[row.name] ?? const [];
+        if (list.length == 1) {
+          stu = list.first;
+        } else if (list.length > 1) {
+          warnings.add('${row.name} 重名，请填写学号');
+          skipped++;
+          continue;
+        }
+      }
+      if (stu == null) {
+        warnings.add('未匹配：${row.name}${no.isEmpty ? '' : '($no)'}');
+        skipped++;
+        continue;
+      }
+
+      // 合并：保留考试科目集合内的分数
+      final scores = <String, double>{};
+      for (final sub in exam.subjects) {
+        final v = row.scores[sub];
+        if (v != null) scores[sub] = v;
+      }
+      if (scores.isEmpty) {
+        scores.addAll(row.scores);
+      }
+      final id = existingByStudent[stu.id] ?? _uuid.v4();
+      await _repo.upsertExamScore(
+        ExamScore(
+          id: id,
+          examId: examId,
+          studentId: stu.id,
+          scores: scores,
+          remark: row.remark,
+        ),
+      );
+      existingByStudent[stu.id] = id;
+      matched++;
+    }
+
+    examScoresByExam[examId] = await _repo.getExamScores(examId);
+    notifyListeners();
+
+    return ExamScoreImportResult(
+      matched: matched,
+      skipped: skipped,
+      warnings: warnings,
+    );
+  }
+
+  /// 单科或总分分析
+  List<SubjectStat> analyzeExam(String examId) {
+    final exam = examById(examId);
+    if (exam == null) return const [];
+    final list = scoresOfExam(examId);
+    final stats = <SubjectStat>[];
+
+    SubjectStat build(String label, List<double> values, double passLine) {
+      if (values.isEmpty) {
+        return SubjectStat(
+          label: label,
+          count: 0,
+          average: 0,
+          max: 0,
+          min: 0,
+          passCount: 0,
+          passScore: passLine,
+        );
+      }
+      final sum = values.fold(0.0, (a, b) => a + b);
+      var max = values.first;
+      var min = values.first;
+      var pass = 0;
+      for (final v in values) {
+        if (v > max) max = v;
+        if (v < min) min = v;
+        if (v >= passLine) pass++;
+      }
+      return SubjectStat(
+        label: label,
+        count: values.length,
+        average: sum / values.length,
+        max: max,
+        min: min,
+        passCount: pass,
+        passScore: passLine,
+      );
+    }
+
+    for (final sub in exam.subjects) {
+      final values = <double>[];
+      for (final s in list) {
+        final v = s.scoreOf(sub);
+        if (v != null) values.add(v);
+      }
+      stats.add(build(sub, values, exam.passScore));
+    }
+
+    final totals = <double>[];
+    for (final s in list) {
+      if (s.scores.isEmpty) continue;
+      totals.add(s.total);
+    }
+    final totalPass = exam.passScore * exam.subjects.length;
+    stats.add(build('总分', totals, totalPass));
+    return stats;
+  }
+
+  List<ExamScore> rankedScores(String examId) {
+    final list = [...scoresOfExam(examId)];
+    list.sort((a, b) => b.total.compareTo(a.total));
+    return list;
   }
 
   Future<void> saveHomework(String title) async {
@@ -557,6 +1708,17 @@ class ClassController extends ChangeNotifier {
       if (s.weekday == weekday && s.period == period) return s.subject;
     }
     return null;
+  }
+
+  /// 今日课程科目（按节次）
+  List<String> get todaySubjects {
+    final w = DateTime.now().weekday;
+    final slots = timetable.where((s) => s.weekday == w).toList()
+      ..sort((a, b) => a.period.compareTo(b.period));
+    return [
+      for (final s in slots)
+        if (s.subject.trim().isNotEmpty) s.subject.trim(),
+    ];
   }
 
   Future<Map<String, int>> weekStats() async {

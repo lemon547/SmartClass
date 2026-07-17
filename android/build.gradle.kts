@@ -24,6 +24,24 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// AGP 9 + file_picker 11：插件不再自行 apply KGP，需补上否则 Kotlin 类编不过
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        val kotlinDir = project.file("src/main/kotlin")
+        if (kotlinDir.exists() &&
+            !project.plugins.hasPlugin("org.jetbrains.kotlin.android")) {
+            project.pluginManager.apply("org.jetbrains.kotlin.android")
+        }
+    }
+    pluginManager.withPlugin("org.jetbrains.kotlin.android") {
+        project.tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

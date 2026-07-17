@@ -6,6 +6,7 @@ import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 class RewardsScreen extends StatelessWidget {
   const RewardsScreen({super.key});
@@ -18,6 +19,18 @@ class RewardsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('积分兑换'),
         actions: [
+          IconButton(
+            tooltip: 'Excel',
+            onPressed: () => showExcelImportActions(
+              context: context,
+              title: '奖品',
+              downloadTemplate: () =>
+                  context.read<ClassController>().exportRewardTemplateFile(),
+              importBytes: (bytes, _) =>
+                  context.read<ClassController>().importRewardFromBytes(bytes),
+            ),
+            icon: const Icon(Icons.table_chart_outlined),
+          ),
           IconButton(
             onPressed: () => _editReward(context),
             icon: const Icon(AppIcons.plus),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 class DutyScreen extends StatelessWidget {
   const DutyScreen({super.key});
@@ -19,6 +20,18 @@ class DutyScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('值日安排'),
         actions: [
+          IconButton(
+            tooltip: 'Excel',
+            onPressed: () => showExcelImportActions(
+              context: context,
+              title: '值日',
+              downloadTemplate: () =>
+                  context.read<ClassController>().exportDutyTemplateFile(),
+              importBytes: (bytes, _) =>
+                  context.read<ClassController>().importDutyFromBytes(bytes),
+            ),
+            icon: const Icon(Icons.table_chart_outlined),
+          ),
           TextButton(
             onPressed: ctrl.dutyList.isEmpty
                 ? null

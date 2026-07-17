@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
-import 'package:smart_class/theme/mascot_assets.dart';
-import 'package:smart_class/widgets/paddi_mascot.dart';
 
 class LargeTitle extends StatelessWidget {
   const LargeTitle(this.title, {super.key, this.trailing, this.showLogo = false});
@@ -21,12 +19,7 @@ class LargeTitle extends StatelessWidget {
           if (showLogo) ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 2, right: 10),
-              child: AppTheme.showMascot
-                  ? const PaddiMascot(
-                      asset: MascotAssets.icon,
-                      height: 40,
-                    )
-                  : Icon(AppIcons.logo, size: 32, color: AppTheme.label),
+              child: Icon(AppIcons.logo, size: 32, color: AppTheme.label),
             ),
           ],
           Expanded(
@@ -64,7 +57,7 @@ class GroupedSection extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
               child: Text(
-                header!.toUpperCase(),
+                header!,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w400,
@@ -253,36 +246,96 @@ class StudentAvatar extends StatelessWidget {
 }
 
 class QuietStat extends StatelessWidget {
-  const QuietStat({super.key, required this.label, required this.value});
+  const QuietStat({
+    super.key,
+    required this.label,
+    required this.value,
+    this.center = false,
+    this.onTap,
+  });
 
   final String label;
   final String value;
+  final bool center;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final child = Column(
+      crossAxisAlignment:
+          center ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.6,
+            color: AppTheme.label,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: AppTheme.tertiaryLabel,
+          ),
+        ),
+      ],
+    );
     return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.6,
-              color: AppTheme.label,
+      child: onTap == null
+          ? child
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: child,
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: AppTheme.tertiaryLabel,
-            ),
-          ),
-        ],
+    );
+  }
+}
+
+/// 积分榜名次标（常见排行榜：金银铜）
+class RankBadge extends StatelessWidget {
+  const RankBadge({super.key, required this.rank});
+
+  final int rank;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color fg;
+    if (rank == 1) {
+      bg = const Color(0xFFFFF3C4);
+      fg = const Color(0xFFB8860B);
+    } else if (rank == 2) {
+      bg = const Color(0xFFE8E8ED);
+      fg = const Color(0xFF636366);
+    } else if (rank == 3) {
+      bg = const Color(0xFFFFE8D6);
+      fg = const Color(0xFFA85A2E);
+    } else {
+      bg = AppTheme.fill;
+      fg = AppTheme.tertiaryLabel;
+    }
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: Text(
+        '$rank',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: fg,
+        ),
       ),
     );
   }
 }
+

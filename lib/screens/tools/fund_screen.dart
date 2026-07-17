@@ -6,6 +6,7 @@ import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 /// 班费收支 — 参考班主任管理大师「班费收支登记」
 class FundScreen extends StatelessWidget {
@@ -19,6 +20,18 @@ class FundScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('班费'),
         actions: [
+          IconButton(
+            tooltip: 'Excel',
+            onPressed: () => showExcelImportActions(
+              context: context,
+              title: '班费',
+              downloadTemplate: () =>
+                  context.read<ClassController>().exportFundTemplateFile(),
+              importBytes: (bytes, _) =>
+                  context.read<ClassController>().importFundFromBytes(bytes),
+            ),
+            icon: const Icon(Icons.table_chart_outlined),
+          ),
           IconButton(
             onPressed: () => _edit(context),
             icon: const Icon(AppIcons.plus),

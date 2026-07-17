@@ -4,6 +4,7 @@ import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/data_charts.dart';
 
 class WeeklyReportScreen extends StatefulWidget {
   const WeeklyReportScreen({super.key});
@@ -34,6 +35,15 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
+    final attSlices = [
+      for (final s in AttendanceStatus.values)
+        ChartSlice(
+          label: s.label,
+          value: (_stats?[s.name] ?? 0).toDouble(),
+          color: _attColor(s),
+        ),
+    ];
+    final top = ctrl.rankedByPoints.take(5).toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('本周概况')),
@@ -42,6 +52,11 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
           : ListView(
               padding: const EdgeInsets.only(top: 8, bottom: 28),
               children: [
+                ChartCard(
+                  title: '本周考勤构成',
+                  height: 180,
+                  child: SimpleDonutChart(slices: attSlices),
+                ),
                 GroupedSection(
                   header: '本周考勤人次',
                   children: [
@@ -78,11 +93,26 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                if (top.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ChartCard(
+                    title: '积分 Top 5',
+                    height: top.length * 28.0 + 8,
+                    child: HorizontalRankChart(
+                      items: [
+                        for (final s in top)
+                          ChartBarItem(
+                            label: s.name,
+                            value: s.points.toDouble(),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
                 GroupedSection(
                   header: '积分 Top 5',
                   children: [
-                    for (final s in ctrl.rankedByPoints.take(5))
+                    for (final s in top)
                       GroupedTile(
                         title: s.name,
                         trailing: Text('${s.points}'),
@@ -91,7 +121,7 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
                 ),
                 const SizedBox(height: 12),
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Text(
                     '数据仅统计本周一至周日已登记的考勤记录。',
                     style: TextStyle(
@@ -104,4 +134,11 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
             ),
     );
   }
+
+  Color _attColor(AttendanceStatus s) => switch (s) {
+        AttendanceStatus.present => const Color(0xFF34C759),
+        AttendanceStatus.late => const Color(0xFFFF9500),
+        AttendanceStatus.leave => AppTheme.blue,
+        AttendanceStatus.absent => AppTheme.destructive,
+      };
 }
