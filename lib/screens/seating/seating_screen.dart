@@ -25,7 +25,7 @@ class SeatingScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('座位表'),
         actions: [
           TextButton(

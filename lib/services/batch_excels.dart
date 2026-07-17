@@ -91,6 +91,39 @@ abstract final class AttendanceBatchExcel {
     return (rows: out, warnings: warnings);
   }
 
+  /// 导出当日考勤（当前班级学生 + 登记状态）
+  static Uint8List export({
+    required String classTitle,
+    required String date,
+    required List<Student> students,
+    required Map<String, AttendanceStatus> statusByStudent,
+    Map<String, String> remarkByStudent = const {},
+  }) {
+    final excel = Excel.createExcel();
+    excel.rename('Sheet1', sheet);
+    final sh = excel[sheet];
+    sh.appendRow([TextCellValue('班级'), TextCellValue(classTitle)]);
+    sh.appendRow([TextCellValue('日期'), TextCellValue(date)]);
+    sh.appendRow([]);
+    sh.appendRow([for (final h in headers) TextCellValue(h)]);
+    for (final s in students) {
+      final status = statusByStudent[s.id] ?? AttendanceStatus.present;
+      sh.appendRow([
+        TextCellValue(date),
+        TextCellValue(s.studentNo),
+        TextCellValue(s.name),
+        TextCellValue(status.label),
+        TextCellValue(remarkByStudent[s.id] ?? ''),
+      ]);
+    }
+    for (var i = 0; i < headers.length; i++) {
+      sh.setColumnWidth(i, 14);
+    }
+    final bytes = excel.encode();
+    if (bytes == null) throw StateError('无法生成考勤表');
+    return Uint8List.fromList(bytes);
+  }
+
   static AttendanceStatus? _parseStatus(String raw) {
     final t = raw.trim();
     return switch (t) {

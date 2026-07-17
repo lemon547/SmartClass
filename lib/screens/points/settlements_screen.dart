@@ -21,13 +21,7 @@ class SettlementsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 28),
           children: [
-            LargeTitle(
-              '结算记录',
-              trailing: IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: Icon(AppIcons.close, color: AppTheme.blue),
-              ),
-            ),
+            LargeTitle('结算记录'),
             GroupedSection(
               header: '历史阶段',
               footer: '结算会保存当时排行快照，并将所有积分清零重新开始。',

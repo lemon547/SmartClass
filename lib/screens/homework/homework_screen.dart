@@ -1,6 +1,5 @@
 ﻿import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
-
 import 'package:provider/provider.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_theme.dart';
@@ -14,7 +13,7 @@ class HomeworkScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('作业检查'),
         actions: [
           IconButton(
@@ -76,44 +75,54 @@ class HomeworkScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _add(BuildContext context) async {
-    final ctrl = context.read<ClassController>();
-    final title = TextEditingController();
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+  void _add(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const _HomeworkAddScreen()),
+    );
+  }
+}
+
+class _HomeworkAddScreen extends StatefulWidget {
+  const _HomeworkAddScreen();
+
+  @override
+  State<_HomeworkAddScreen> createState() => _HomeworkAddScreenState();
+}
+
+class _HomeworkAddScreenState extends State<_HomeworkAddScreen> {
+  final _title = TextEditingController();
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_title.text.trim().isEmpty) return;
+    await context.read<ClassController>().saveHomework(_title.text);
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(
+        title: const Text('添加作业'),
+        actions: [TextButton(onPressed: _save, child: const Text('添加'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(hintText: '如：语文第3课生字'),
+            autofocus: true,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('添加作业', style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 12),
-              TextField(
-                controller: title,
-                decoration: const InputDecoration(hintText: '如：语文第3课生字'),
-                autofocus: true,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () async {
-                  if (title.text.trim().isEmpty) return;
-                  await ctrl.saveHomework(title.text);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                child: const Text('添加'),
-              ),
-            ],
-          ),
-        );
-      },
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _save, child: const Text('添加')),
+        ],
+      ),
     );
   }
 }

@@ -21,7 +21,7 @@ class CountdownScreen extends StatelessWidget {
       ..sort((a, b) => b.daysLeft.compareTo(a.daysLeft));
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('倒数日'),
         actions: [
           IconButton(
@@ -122,75 +122,11 @@ class CountdownScreen extends StatelessWidget {
     String? id,
     String title = '',
     String date = '',
-  }) async {
-    final ctrl = context.read<ClassController>();
-    final titleCtrl = TextEditingController(text: title);
-    var picked = date.isNotEmpty
-        ? (DateTime.tryParse(date) ??
-            DateTime.now().add(const Duration(days: 30)))
-        : DateTime.now().add(const Duration(days: 30));
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(id == null ? '添加倒数日' : '编辑倒数日',
-                      style: Theme.of(ctx).textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: titleCtrl,
-                    decoration:
-                        const InputDecoration(labelText: '名称，如期中考试、暑假'),
-                    textInputAction: TextInputAction.done,
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('目标日期'),
-                    subtitle: Text(DateFormat('yyyy-MM-dd').format(picked)),
-                    trailing: const Icon(AppIcons.calendar),
-                    onTap: () async {
-                      final d = await showDatePicker(
-                        context: ctx,
-                        initialDate: picked,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                      );
-                      if (d != null) setState(() => picked = d);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      if (titleCtrl.text.trim().isEmpty) return;
-                      await ctrl.saveCountdown(
-                        id: id,
-                        title: titleCtrl.text,
-                        targetDate: DateFormat('yyyy-MM-dd').format(picked),
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('保存'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+  }) {
+    return Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _CountdownEditScreen(id: id, title: title, date: date),
+      ),
     );
   }
 
@@ -215,6 +151,86 @@ class CountdownScreen extends StatelessWidget {
     if (ok == true && context.mounted) {
       await context.read<ClassController>().deleteCountdown(c.id);
     }
+  }
+}
+
+class _CountdownEditScreen extends StatefulWidget {
+  const _CountdownEditScreen({this.id, this.title = '', this.date = ''});
+  final String? id;
+  final String title;
+  final String date;
+
+  @override
+  State<_CountdownEditScreen> createState() => _CountdownEditScreenState();
+}
+
+class _CountdownEditScreenState extends State<_CountdownEditScreen> {
+  late final TextEditingController _title;
+  late DateTime _picked;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.title);
+    _picked = widget.date.isNotEmpty
+        ? (DateTime.tryParse(widget.date) ??
+            DateTime.now().add(const Duration(days: 30)))
+        : DateTime.now().add(const Duration(days: 30));
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_title.text.trim().isEmpty) return;
+    await context.read<ClassController>().saveCountdown(
+          id: widget.id,
+          title: _title.text,
+          targetDate: DateFormat('yyyy-MM-dd').format(_picked),
+        );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(
+        title: Text(widget.id == null ? '添加倒数日' : '编辑倒数日'),
+        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          TextField(
+            controller: _title,
+            decoration:
+                const InputDecoration(labelText: '名称，如期中考试、暑假'),
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('目标日期'),
+            subtitle: Text(DateFormat('yyyy-MM-dd').format(_picked)),
+            trailing: const Icon(AppIcons.calendar),
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _picked,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+              );
+              if (d != null) setState(() => _picked = d);
+            },
+          ),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _save, child: const Text('保存')),
+        ],
+      ),
+    );
   }
 }
 

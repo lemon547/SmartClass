@@ -6,14 +6,20 @@ import 'package:smart_class/services/excel_batch_helper.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
-/// 手机端统一「下载模板 / 导入表格」底部菜单
+/// 手机端统一「导入表格 / 手动添加」底部菜单
+///
+/// [onManualAdd] 手动添加回调（可选）；[manualAddLabel] 手动添加行标题；
+/// [manualAddSubtitle] 手动添加行副标题；[downloadTemplate] 用于弱化区下载模板。
 Future<void> showExcelImportActions({
   required BuildContext context,
   required String title,
   required Future<String> Function() downloadTemplate,
   required Future<BatchImportResult> Function(Uint8List bytes, String? fileName)
       importBytes,
-  String tip = '先下载模板，用手机上的 WPS 或 Excel 填写后，再点「从手机导入」。',
+  VoidCallback? onManualAdd,
+  String manualAddLabel = '手动添加',
+  String manualAddSubtitle = '逐条填写',
+  String tip = '先下载模板，用手机上的 WPS 或 Excel 填写后，再点「通过表格导入」。',
 }) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -21,51 +27,54 @@ Future<void> showExcelImportActions({
     builder: (ctx) {
       return SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$title · 表格',
-                      style: Theme.of(ctx).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      tip,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: AppTheme.secondaryLabel,
-                      ),
-                    ),
-                  ],
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: Text(
+                  title,
+                  style: Theme.of(ctx).textTheme.titleMedium,
                 ),
               ),
               ListTile(
-                leading: Icon(AppIcons.download, color: AppTheme.blue),
-                title: const Text('下载空白模板'),
-                subtitle: const Text('保存到手机，可用 WPS 打开'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  downloadExcelTemplate(context, downloadTemplate);
-                },
-              ),
-              ListTile(
                 leading: Icon(AppIcons.upload, color: AppTheme.blue),
-                title: const Text('从手机导入'),
+                title: const Text('通过表格导入'),
                 subtitle: const Text('选择已填好的 xlsx / csv'),
                 onTap: () {
                   Navigator.pop(ctx);
                   importExcelFromPhone(context, importBytes);
                 },
               ),
-              const SizedBox(height: 4),
+              if (onManualAdd != null)
+                ListTile(
+                  leading: Icon(AppIcons.plus, color: AppTheme.blue),
+                  title: Text(manualAddLabel),
+                  subtitle: Text(manualAddSubtitle),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    onManualAdd();
+                  },
+                ),
+              // 弱化区：下载模板只作为次要文字链接
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.secondaryLabel,
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    downloadExcelTemplate(context, downloadTemplate);
+                  },
+                  icon: Icon(AppIcons.download, size: 15,
+                      color: AppTheme.secondaryLabel),
+                  label: const Text('下载空白模板（用手机 WPS / Excel 填写）'),
+                ),
+              ),
             ],
           ),
         ),

@@ -20,7 +20,7 @@ class SalaryScreen extends StatelessWidget {
     final yearTotal = list.fold<double>(0, (a, b) => a + b.netAmount);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('每月工资'),
         actions: [
           IconButton(
@@ -113,108 +113,138 @@ class SalaryScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _edit(BuildContext context, {SalaryRecord? existing}) async {
-    final ctrl = context.read<ClassController>();
+  void _edit(BuildContext context, {SalaryRecord? existing}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _SalaryEditScreen(existing: existing),
+      ),
+    );
+  }
+}
+
+class _SalaryEditScreen extends StatefulWidget {
+  const _SalaryEditScreen({this.existing});
+  final SalaryRecord? existing;
+
+  @override
+  State<_SalaryEditScreen> createState() => _SalaryEditScreenState();
+}
+
+class _SalaryEditScreenState extends State<_SalaryEditScreen> {
+  late final TextEditingController _ym;
+  late final TextEditingController _title;
+  late final TextEditingController _base;
+  late final TextEditingController _allowance;
+  late final TextEditingController _deduction;
+  late final TextEditingController _note;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
     final now = DateTime.now();
-    final ym = TextEditingController(
-      text: existing?.yearMonth ?? DateFormat('yyyy-MM').format(now),
+    _ym = TextEditingController(
+      text: e?.yearMonth ?? DateFormat('yyyy-MM').format(now),
     );
-    final title = TextEditingController(text: existing?.title ?? '月工资');
-    final base = TextEditingController(
-      text: existing == null ? '' : existing.baseAmount.toStringAsFixed(0),
+    _title = TextEditingController(text: e?.title ?? '月工资');
+    _base = TextEditingController(
+      text: e == null ? '' : e.baseAmount.toStringAsFixed(0),
     );
-    final allowance = TextEditingController(
-      text: existing == null ? '' : existing.allowance.toStringAsFixed(0),
+    _allowance = TextEditingController(
+      text: e == null ? '' : e.allowance.toStringAsFixed(0),
     );
-    final deduction = TextEditingController(
-      text: existing == null ? '' : existing.deduction.toStringAsFixed(0),
+    _deduction = TextEditingController(
+      text: e == null ? '' : e.deduction.toStringAsFixed(0),
     );
-    final note = TextEditingController(text: existing?.note ?? '');
+    _note = TextEditingController(text: e?.note ?? '');
+  }
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 8,
-            bottom: MediaQuery.viewInsetsOf(ctx).bottom + 20,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  existing == null ? '记工资' : '编辑工资',
-                  style: Theme.of(ctx).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: ym,
-                  decoration: const InputDecoration(
-                    labelText: '月份',
-                    hintText: 'yyyy-MM',
-                  ),
-                ),
-                TextField(
-                  controller: title,
-                  decoration: const InputDecoration(labelText: '标题'),
-                ),
-                TextField(
-                  controller: base,
-                  decoration: const InputDecoration(labelText: '基本工资'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                ),
-                TextField(
-                  controller: allowance,
-                  decoration: const InputDecoration(labelText: '补贴 / 津贴'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                ),
-                TextField(
-                  controller: deduction,
-                  decoration: const InputDecoration(labelText: '扣款'),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                ),
-                TextField(
-                  controller: note,
-                  decoration: const InputDecoration(labelText: '备注'),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('保存'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  @override
+  void dispose() {
+    _ym.dispose();
+    _title.dispose();
+    _base.dispose();
+    _allowance.dispose();
+    _deduction.dispose();
+    _note.dispose();
+    super.dispose();
+  }
 
-    if (saved != true) return;
-    final b = double.tryParse(base.text.trim()) ?? 0;
-    final a = double.tryParse(allowance.text.trim()) ?? 0;
-    final d = double.tryParse(deduction.text.trim()) ?? 0;
+  Future<void> _save() async {
+    final now = DateTime.now();
+    final b = double.tryParse(_base.text.trim()) ?? 0;
+    final a = double.tryParse(_allowance.text.trim()) ?? 0;
+    final d = double.tryParse(_deduction.text.trim()) ?? 0;
     final net = SalaryRecord.computeNet(base: b, allowance: a, deduction: d);
+    final e = widget.existing;
     final record = SalaryRecord(
-      id: existing?.id ?? const Uuid().v4(),
-      yearMonth: ym.text.trim().isEmpty
+      id: e?.id ?? const Uuid().v4(),
+      yearMonth: _ym.text.trim().isEmpty
           ? DateFormat('yyyy-MM').format(now)
-          : ym.text.trim(),
-      title: title.text.trim(),
+          : _ym.text.trim(),
+      title: _title.text.trim(),
       baseAmount: b,
       allowance: a,
       deduction: d,
       netAmount: net,
-      paidAt: existing?.paidAt ?? DateFormat('yyyy-MM-dd').format(now),
-      note: note.text.trim(),
-      createdAt: existing?.createdAt ?? now,
+      paidAt: e?.paidAt ?? DateFormat('yyyy-MM-dd').format(now),
+      note: _note.text.trim(),
+      createdAt: e?.createdAt ?? now,
     );
-    await ctrl.upsertSalary(record);
+    await context.read<ClassController>().upsertSalary(record);
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(
+        title: Text(widget.existing == null ? '记工资' : '编辑工资'),
+        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        children: [
+          TextField(
+            controller: _ym,
+            decoration: const InputDecoration(
+              labelText: '月份',
+              hintText: 'yyyy-MM',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: '标题'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _base,
+            decoration: const InputDecoration(labelText: '基本工资'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _allowance,
+            decoration: const InputDecoration(labelText: '补贴 / 津贴'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _deduction,
+            decoration: const InputDecoration(labelText: '扣款'),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _note,
+            decoration: const InputDecoration(labelText: '备注'),
+            maxLines: 2,
+          ),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _save, child: const Text('保存')),
+        ],
+      ),
+    );
   }
 }

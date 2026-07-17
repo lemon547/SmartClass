@@ -747,6 +747,67 @@ class TimetableSlot {
       );
 }
 
+/// 课程表行：节次名称与上课时间（按班级配置）
+class TimetablePeriod {
+  final int period;
+  final String label;
+  final String startTime;
+  final String endTime;
+
+  const TimetablePeriod({
+    required this.period,
+    this.label = '',
+    this.startTime = '',
+    this.endTime = '',
+  });
+
+  String get displayLabel =>
+      label.trim().isNotEmpty ? label.trim() : '第$period节';
+
+  String get timeRange {
+    if (startTime.isEmpty && endTime.isEmpty) return '';
+    if (endTime.isEmpty) return startTime;
+    if (startTime.isEmpty) return endTime;
+    return '$startTime-$endTime';
+  }
+
+  TimetablePeriod copyWith({
+    int? period,
+    String? label,
+    String? startTime,
+    String? endTime,
+  }) {
+    return TimetablePeriod(
+      period: period ?? this.period,
+      label: label ?? this.label,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+    );
+  }
+
+  static List<TimetablePeriod> defaults() {
+    const times = [
+      ('08:00', '08:45'),
+      ('08:55', '09:40'),
+      ('10:00', '10:45'),
+      ('10:55', '11:40'),
+      ('14:00', '14:45'),
+      ('14:55', '15:40'),
+      ('16:00', '16:45'),
+      ('16:55', '17:40'),
+    ];
+    return [
+      for (var i = 0; i < times.length; i++)
+        TimetablePeriod(
+          period: i + 1,
+          label: '第${i + 1}节',
+          startTime: times[i].$1,
+          endTime: times[i].$2,
+        ),
+    ];
+  }
+}
+
 class PointReasonPreset {
   final String reason;
   final int delta;
@@ -1191,6 +1252,8 @@ extension LessonStatusX on LessonStatus {
 /// 一节课 / 一个教学单元的授课进度
 class LessonUnit {
   final String id;
+  /// 所属班级 id（读取数据库时有值）
+  final String classId;
   final String subject;
   final String title;
   final String chapter;
@@ -1204,6 +1267,7 @@ class LessonUnit {
 
   const LessonUnit({
     required this.id,
+    this.classId = '',
     this.subject = '',
     required this.title,
     this.chapter = '',
@@ -1218,6 +1282,7 @@ class LessonUnit {
 
   LessonUnit copyWith({
     String? id,
+    String? classId,
     String? subject,
     String? title,
     String? chapter,
@@ -1231,6 +1296,7 @@ class LessonUnit {
   }) {
     return LessonUnit(
       id: id ?? this.id,
+      classId: classId ?? this.classId,
       subject: subject ?? this.subject,
       title: title ?? this.title,
       chapter: chapter ?? this.chapter,
@@ -1246,6 +1312,7 @@ class LessonUnit {
 
   Map<String, Object?> toMap() => {
         'id': id,
+        if (classId.isNotEmpty) 'class_id': classId,
         'subject': subject,
         'title': title,
         'chapter': chapter,
@@ -1260,6 +1327,7 @@ class LessonUnit {
 
   factory LessonUnit.fromMap(Map<String, Object?> map) => LessonUnit(
         id: map['id']! as String,
+        classId: (map['class_id'] as String?) ?? '',
         subject: (map['subject'] as String?) ?? '',
         title: map['title']! as String,
         chapter: (map['chapter'] as String?) ?? '',

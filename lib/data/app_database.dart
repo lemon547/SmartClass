@@ -19,7 +19,7 @@ class AppDatabase {
     final path = p.join(dir.path, 'smart_class.db');
     return openDatabase(
       path,
-      version: 13,
+      version: 14,
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
@@ -34,6 +34,7 @@ class AppDatabase {
         await _createV11(db);
         await _createV12(db);
         await _createV13(db);
+        await _createV14(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
@@ -48,6 +49,7 @@ class AppDatabase {
         if (oldVersion < 11) await _createV11(db);
         if (oldVersion < 12) await _createV12(db);
         if (oldVersion < 13) await _createV13(db);
+        if (oldVersion < 14) await _createV14(db);
       },
     );
   }
@@ -385,5 +387,27 @@ class AppDatabase {
     try {
       await db.execute('ALTER TABLE classes ADD COLUMN school TEXT');
     } catch (_) {}
+  }
+
+  /// 课程表节次配置 + 本人授课科目
+  Future<void> _createV14(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS timetable_periods (
+        class_id TEXT NOT NULL,
+        period INTEGER NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        start_time TEXT NOT NULL DEFAULT '',
+        end_time TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (class_id, period)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS teaching_subjects (
+        class_id TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (class_id, subject)
+      )
+    ''');
   }
 }

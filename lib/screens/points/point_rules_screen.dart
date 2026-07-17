@@ -20,7 +20,7 @@ class PointRulesScreen extends StatelessWidget {
         ctrl.pointPresets.where((p) => p.delta < 0).toList();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('积分规则'),
         actions: [
           IconButton(
@@ -28,15 +28,10 @@ class PointRulesScreen extends StatelessWidget {
             onPressed: () => _resetDefaults(context),
             icon: const Icon(AppIcons.undo),
           ),
-          IconButton(
-            tooltip: '添加规则',
-            onPressed: () => _editRule(context),
-            icon: const Icon(AppIcons.plus),
-          ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: 88, top: 8),
+        padding: const EdgeInsets.only(bottom: 28, top: 8),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -92,11 +87,6 @@ class PointRulesScreen extends StatelessWidget {
             ],
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _editRule(context),
-        icon: const Icon(AppIcons.plus),
-        label: const Text('新规则'),
       ),
     );
   }

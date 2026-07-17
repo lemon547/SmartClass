@@ -154,7 +154,7 @@ class _RollCallScreenState extends State<RollCallScreen> {
     final ctrl = context.watch<ClassController>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('随机点名'),
         actions: [
           TextButton(

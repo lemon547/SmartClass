@@ -20,7 +20,7 @@ class SemesterDetailScreen extends StatelessWidget {
     final semester = ctrl.semesterById(semesterId);
     if (semester == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('学期')),
+        appBar: PageAppBar(title: const Text('学期')),
         body: const Center(child: Text('学期不存在')),
       );
     }
@@ -43,7 +43,7 @@ class _ActiveSemesterView extends StatelessWidget {
     final top = ctrl.rankedByPoints.take(8).toList();
 
     return Scaffold(
-      appBar: AppBar(title: Text(semester.title)),
+      appBar: PageAppBar(title: Text(semester.title)),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 28),
         children: [
@@ -120,7 +120,7 @@ class _ArchivedSemesterView extends StatelessWidget {
     ];
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: Text(semester.title),
         actions: [
           IconButton(

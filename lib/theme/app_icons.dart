@@ -7,6 +7,8 @@ abstract final class AppIcons {
   static const IconData home = LucideIcons.house;
   static const IconData students = LucideIcons.users;
   static const IconData points = LucideIcons.star;
+  /// 底部「班级」Tab
+  static const IconData classes = LucideIcons.school;
   static const IconData attendance = LucideIcons.clipboardCheck;
   /// 「我的」Tab：个人中心语义
   static const IconData more = LucideIcons.circleUserRound;
@@ -18,6 +20,7 @@ abstract final class AppIcons {
   static const IconData search = LucideIcons.search;
   static const IconData close = LucideIcons.x;
   static const IconData chevronRight = LucideIcons.chevronRight;
+  static const IconData chevronLeft = LucideIcons.chevronLeft;
   static const IconData trash = LucideIcons.trash2;
   static const IconData calendar = LucideIcons.calendar;
   static const IconData shuffle = LucideIcons.shuffle;

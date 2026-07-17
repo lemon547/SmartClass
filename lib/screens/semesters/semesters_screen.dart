@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/semesters/semester_detail_screen.dart';
-import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 
@@ -21,7 +20,7 @@ class SemestersScreen extends StatelessWidget {
         ctrl.semesters.where((s) => s.isArchived).toList(growable: false);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('学期')),
+      appBar: PageAppBar(title: const Text('学期')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 28),
         children: [
@@ -146,93 +145,108 @@ class SemestersScreen extends StatelessWidget {
   }
 
   Future<void> _archive(BuildContext context) async {
-    final ctrl = context.read<ClassController>();
-    final archiveTitle =
-        TextEditingController(text: ctrl.activeSemester?.title ?? '');
-    final newTitle = TextEditingController(text: Semester.defaultLabel().title);
-    final note = TextEditingController();
-
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: true,
-      enableDrag: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('结束本学期',
-                        style: Theme.of(ctx).textTheme.titleLarge),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    icon: Icon(AppIcons.close, color: AppTheme.blue),
-                  ),
-                ],
-              ),
-              Text(
-                '将把本学期积分、考勤、成绩、留痕等存档；花名册与座位、课程表保留，并开启新学期。',
-                style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: archiveTitle,
-                decoration: const InputDecoration(labelText: '存档学期名称'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: newTitle,
-                decoration: const InputDecoration(labelText: '新学期名称'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: note,
-                decoration: const InputDecoration(labelText: '备注（选填）'),
-              ),
-              const SizedBox(height: 18),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('确认存档并开启'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消'),
-              ),
-            ],
-          ),
-        );
-      },
+    final result = await Navigator.of(context).push<_SemesterArchiveResult>(
+      MaterialPageRoute(builder: (_) => const _SemesterArchiveScreen()),
     );
-
-    final aTitle = archiveTitle.text.trim();
-    final nTitle = newTitle.text.trim();
-    final n = note.text.trim();
-    archiveTitle.dispose();
-    newTitle.dispose();
-    note.dispose();
-    if (ok != true) return;
-
+    if (result == null || !context.mounted) return;
+    final ctrl = context.read<ClassController>();
     await ctrl.archiveSemesterAndStartNew(
-      archiveTitle: aTitle,
-      newTitle: nTitle,
-      note: n,
+      archiveTitle: result.archiveTitle,
+      newTitle: result.newTitle,
+      note: result.note,
     );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('已存档，新学期：${ctrl.activeSemester?.title ?? nTitle}'),
+        content: Text('已存档，新学期：${ctrl.activeSemester?.title ?? result.newTitle}'),
+      ),
+    );
+  }
+}
+
+class _SemesterArchiveResult {
+  const _SemesterArchiveResult({
+    required this.archiveTitle,
+    required this.newTitle,
+    required this.note,
+  });
+  final String archiveTitle;
+  final String newTitle;
+  final String note;
+}
+
+class _SemesterArchiveScreen extends StatefulWidget {
+  const _SemesterArchiveScreen();
+
+  @override
+  State<_SemesterArchiveScreen> createState() => _SemesterArchiveScreenState();
+}
+
+class _SemesterArchiveScreenState extends State<_SemesterArchiveScreen> {
+  late final TextEditingController _archiveTitle;
+  late final TextEditingController _newTitle;
+  late final TextEditingController _note;
+
+  @override
+  void initState() {
+    super.initState();
+    final ctrl = context.read<ClassController>();
+    _archiveTitle = TextEditingController(text: ctrl.activeSemester?.title ?? '');
+    _newTitle = TextEditingController(text: Semester.defaultLabel().title);
+    _note = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _archiveTitle.dispose();
+    _newTitle.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    Navigator.pop(
+      context,
+      _SemesterArchiveResult(
+        archiveTitle: _archiveTitle.text.trim(),
+        newTitle: _newTitle.text.trim(),
+        note: _note.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(title: const Text('结束本学期')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        children: [
+          Text(
+            '将把本学期积分、考勤、成绩、留痕等存档；花名册与座位、课程表保留，并开启新学期。',
+            style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _archiveTitle,
+            decoration: const InputDecoration(labelText: '存档学期名称'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _newTitle,
+            decoration: const InputDecoration(labelText: '新学期名称'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _note,
+            decoration: const InputDecoration(labelText: '备注（选填）'),
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _confirm,
+            child: const Text('确认存档并开启'),
+          ),
+        ],
       ),
     );
   }

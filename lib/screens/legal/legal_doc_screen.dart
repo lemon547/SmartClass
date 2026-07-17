@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_class/theme/app_theme.dart';
+import 'package:smart_class/widgets/apple_widgets.dart';
 
 /// 协议 / 政策阅读页
 class LegalDocScreen extends StatelessWidget {
@@ -15,7 +16,7 @@ class LegalDocScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: PageAppBar(title: Text(title)),
       body: SelectionArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),

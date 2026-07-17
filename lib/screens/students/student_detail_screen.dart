@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/students/student_edit_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -47,13 +48,13 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
     final s = ctrl.studentById(widget.studentId);
     if (s == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('学生')),
+        appBar: PageAppBar(title: const Text('学生')),
         body: const Center(child: Text('学生不存在')),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: Text(s.name),
         actions: [
           IconButton(
@@ -164,237 +165,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
   }
 
   Future<void> _edit(BuildContext context, Student s) async {
-    final ctrl = context.read<ClassController>();
-    final name = TextEditingController(text: s.name);
-    final no = TextEditingController(text: s.studentNo);
-    final phone = TextEditingController(text: s.phone);
-    final note = TextEditingController(text: s.note);
-    final group = TextEditingController(text: s.groupName);
-    final birthday = TextEditingController(text: s.birthday);
-    final address = TextEditingController(text: s.address);
-    var gender = (s.gender == '男' || s.gender == '女') ? s.gender : '';
-    final selectedRoles = Student.splitRoles(s.role).toSet();
-    var roleOptions = List<String>.from(ctrl.rolePresets);
-    for (final r in selectedRoles) {
-      if (!roleOptions.contains(r)) roleOptions.add(r);
-    }
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: true,
-      enableDrag: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(ctx).height * 0.88,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text('编辑',
-                              style: Theme.of(ctx).textTheme.titleLarge),
-                        ),
-                        IconButton(
-                          tooltip: '关闭',
-                          onPressed: () => Navigator.pop(ctx),
-                          icon: Icon(AppIcons.close, color: AppTheme.blue),
-                        ),
-                      ],
-                    ),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextField(
-                                controller: name,
-                                decoration:
-                                    const InputDecoration(labelText: '姓名')),
-                            const SizedBox(height: 8),
-                            TextField(
-                                controller: no,
-                                decoration:
-                                    const InputDecoration(labelText: '学号')),
-                            const SizedBox(height: 8),
-                            TextField(
-                                controller: group,
-                                decoration:
-                                    const InputDecoration(labelText: '小组')),
-                            const SizedBox(height: 8),
-                            TextField(
-                                controller: birthday,
-                                decoration: const InputDecoration(
-                                  labelText: '生日（月-日）',
-                                  hintText: '如 03-15',
-                                )),
-                            const SizedBox(height: 8),
-                            TextField(
-                                controller: phone,
-                                decoration:
-                                    const InputDecoration(labelText: '电话')),
-                            const SizedBox(height: 8),
-                            TextField(
-                                controller: address,
-                                decoration:
-                                    const InputDecoration(labelText: '家庭住址'),
-                                minLines: 1,
-                                maxLines: 2),
-                            const SizedBox(height: 8),
-                            TextField(
-                                controller: note,
-                                decoration:
-                                    const InputDecoration(labelText: '备注')),
-                            const SizedBox(height: 12),
-                            Text('班委（可多选）',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppTheme.tertiaryLabel)),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                FilterChip(
-                                  label: const Text('无'),
-                                  selected: selectedRoles.isEmpty,
-                                  onSelected: (_) => setState(
-                                      () => selectedRoles.clear()),
-                                ),
-                                for (final r in roleOptions)
-                                  FilterChip(
-                                    label: Text(r),
-                                    selected: selectedRoles.contains(r),
-                                    onSelected: (on) => setState(() {
-                                      if (on) {
-                                        selectedRoles.add(r);
-                                      } else {
-                                        selectedRoles.remove(r);
-                                      }
-                                    }),
-                                  ),
-                                ActionChip(
-                                  avatar: Icon(AppIcons.plus,
-                                      size: 16, color: AppTheme.blue),
-                                  label: const Text('添加班委'),
-                                  onPressed: () async {
-                                    final added =
-                                        await _promptCustomRole(ctx);
-                                    if (added == null || added.isEmpty) {
-                                      return;
-                                    }
-                                    await ctrl.addRolePreset(added);
-                                    setState(() {
-                                      if (!roleOptions.contains(added)) {
-                                        roleOptions = [
-                                          ...roleOptions,
-                                          added
-                                        ];
-                                      }
-                                      selectedRoles.add(added);
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Text('性别',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppTheme.tertiaryLabel)),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                for (final g in ['男', '女'])
-                                  ChoiceChip(
-                                    label: Text(g),
-                                    selected: gender == g,
-                                    onSelected: (_) =>
-                                        setState(() => gender = g),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                          ],
-                        ),
-                      ),
-                    ),
-                    FilledButton(
-                      onPressed: () async {
-                        await ctrl.saveStudent(
-                          id: s.id,
-                          name: name.text,
-                          studentNo: no.text,
-                          phone: phone.text,
-                          note: note.text,
-                          gender: gender,
-                          groupName: group.text,
-                          role: Student.joinRoles(selectedRoles),
-                          birthday: birthday.text,
-                          address: address.text,
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        await _load();
-                      },
-                      child: const Text('保存'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('取消'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<String?> _promptCustomRole(BuildContext context) async {
-    final text = TextEditingController();
-    final ok = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('添加班委'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: CupertinoTextField(
-            controller: text,
-            placeholder: '如：宣传委员',
-            autofocus: true,
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('添加'),
-          ),
-        ],
-      ),
-    );
-    final value = text.text.trim();
-    text.dispose();
-    if (ok != true || value.isEmpty) return null;
-    return value;
+    await StudentEditScreen.push(context, student: s);
+    if (context.mounted) await _load();
   }
 }

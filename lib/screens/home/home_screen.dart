@@ -41,7 +41,7 @@ class HomeScreen extends StatelessWidget {
         .toList();
     final birthdays = ctrl.todayBirthdays;
     final upcoming = ctrl.upcomingCountdowns.take(3).toList();
-    final todayCourses = ctrl.todaySubjects;
+    final todayCourses = ctrl.todayTeachingSubjects;
 
     return Scaffold(
       body: SafeArea(
@@ -209,12 +209,12 @@ class HomeScreen extends StatelessWidget {
             ],
             const SizedBox(height: 16),
             GroupedSection(
-              header: '今日课程',
+              header: '老师今日授课',
               children: [
                 if (todayCourses.isEmpty)
                   GroupedTile(
-                    title: '今天暂无课程',
-                    subtitle: '去课程表里填写本周安排',
+                    title: '今天暂无授课安排',
+                    subtitle: '去班级课表里设置本人授课科目',
                     leading: Icon(AppIcons.book, color: AppTheme.blue),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -224,7 +224,7 @@ class HomeScreen extends StatelessWidget {
                 else
                   GroupedTile(
                     title: todayCourses.join(' · '),
-                    subtitle: '共 ${todayCourses.length} 节 · 点按打开课程表',
+                    subtitle: '共 ${todayCourses.length} 节 · 点按打开班级课表',
                     leading: Icon(AppIcons.book, color: AppTheme.blue),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
@@ -352,7 +352,9 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 16),
             GroupedSection(
               header: '积分榜',
-              footer: top.isEmpty ? '添加学生后显示排行' : '显示前 ${top.length} 名',
+              headerTrailing: top.isEmpty
+                  ? '添加学生后显示排行'
+                  : '显示前 ${top.length} 名',
               children: [
                 if (top.isEmpty)
                   const Padding(

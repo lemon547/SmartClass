@@ -15,7 +15,7 @@ class GroupsScreen extends StatelessWidget {
     final ungrouped = ctrl.students.where((s) => s.groupName.isEmpty).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('小组')),
+      appBar: PageAppBar(title: const Text('小组')),
       body: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 28),
         children: [

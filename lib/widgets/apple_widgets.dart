@@ -2,32 +2,111 @@ import 'package:flutter/material.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
+/// 子页面 AppBar：可返回时自动显示返回按钮
+class PageAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const PageAppBar({
+    super.key,
+    required this.title,
+    this.actions,
+    this.bottom,
+    this.centerTitle,
+  });
+
+  final Widget title;
+  final List<Widget>? actions;
+  final PreferredSizeWidget? bottom;
+  final bool? centerTitle;
+
+  @override
+  Size get preferredSize =>
+      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
+
+  @override
+  Widget build(BuildContext context) {
+    final canPop = Navigator.canPop(context);
+    return AppBar(
+      automaticallyImplyLeading: false,
+      leading: canPop
+          ? IconButton(
+              icon: const Icon(AppIcons.chevronLeft),
+              onPressed: () => Navigator.maybePop(context),
+              tooltip: '返回',
+            )
+          : null,
+      title: title,
+      actions: actions,
+      bottom: bottom,
+      centerTitle: centerTitle,
+    );
+  }
+}
+
 class LargeTitle extends StatelessWidget {
-  const LargeTitle(this.title, {super.key, this.trailing, this.showLogo = false});
+  const LargeTitle(
+    this.title, {
+    super.key,
+    this.trailing,
+    this.showLogo = false,
+    this.showBack,
+  });
 
   final String title;
   final Widget? trailing;
   final bool showLogo;
+  /// 为 null 时：能 pop 则显示返回
+  final bool? showBack;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (showLogo) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2, right: 10),
-              child: Icon(AppIcons.logo, size: 32, color: AppTheme.label),
+    final canPop = showBack ?? Navigator.canPop(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (canPop)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, right: 12, top: 2),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => Navigator.maybePop(context),
+                icon: Icon(AppIcons.chevronLeft, color: AppTheme.blue, size: 22),
+                label: Text(
+                  '返回',
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: AppTheme.blue,
+                  ),
+                ),
+              ),
             ),
-          ],
-          Expanded(
-            child: Text(title, style: Theme.of(context).textTheme.displayLarge),
           ),
-          if (trailing != null) trailing!,
-        ],
-      ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (showLogo) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 2, right: 10),
+                  child: Icon(AppIcons.logo, size: 32, color: AppTheme.label),
+                ),
+              ],
+              Expanded(
+                child:
+                    Text(title, style: Theme.of(context).textTheme.displayLarge),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -36,18 +115,21 @@ class GroupedSection extends StatelessWidget {
   const GroupedSection({
     super.key,
     this.header,
+    this.headerTrailing,
     this.footer,
     required this.children,
     this.padding = const EdgeInsets.symmetric(horizontal: 16),
   });
 
   final String? header;
+  final String? headerTrailing;
   final String? footer;
   final List<Widget> children;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
+    final hairline = 1 / MediaQuery.devicePixelRatioOf(context);
     return Padding(
       padding: padding,
       child: Column(
@@ -56,14 +138,28 @@ class GroupedSection extends StatelessWidget {
           if (header != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-              child: Text(
-                header!,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                  color: AppTheme.tertiaryLabel,
-                  letterSpacing: -0.08,
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    header!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: AppTheme.tertiaryLabel,
+                      letterSpacing: -0.08,
+                    ),
+                  ),
+                  if (headerTrailing != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      headerTrailing!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.tertiaryLabel,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           DecoratedBox(
@@ -75,10 +171,9 @@ class GroupedSection extends StatelessWidget {
               children: [
                 for (var i = 0; i < children.length; i++) ...[
                   if (i > 0)
-                    Divider(
-                      height: 0.33,
-                      thickness: 0.33,
-                      indent: 16,
+                    Container(
+                      margin: const EdgeInsets.only(left: 16),
+                      height: hairline,
                       color: AppTheme.separator,
                     ),
                   children[i],

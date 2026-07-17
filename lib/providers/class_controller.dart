@@ -74,6 +74,8 @@ class ClassController extends ChangeNotifier {
   List<HomeworkItem> homework = [];
   List<RewardItem> rewards = [];
   List<TimetableSlot> timetable = [];
+  List<TimetablePeriod> timetablePeriods = TimetablePeriod.defaults();
+  List<String> teachingSubjects = [];
   List<SalaryRecord> salaryRecords = [];
   String selectedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
   bool loading = true;
@@ -95,11 +97,27 @@ class ClassController extends ChangeNotifier {
   bool isFeatureVisible(String featureId) {
     final cls = currentClass;
     if (cls == null) return true;
+    return isFeatureVisibleFor(cls, featureId);
+  }
+
+  bool isFeatureVisibleFor(ManagedClass cls, String featureId) {
     return ClassFeatures.isVisible(
       featureId: featureId,
       role: cls.teacherRole,
       overrides: cls.featureFlags,
     );
+  }
+
+  int lessonCountForClass(String classId) =>
+      lessonUnits.where((u) => u.classId == classId).length;
+
+  int lessonFileCountForClass(String classId) {
+    var n = 0;
+    for (final u in lessonUnits) {
+      if (u.classId != classId) continue;
+      n += lessonFilesByUnit[u.id]?.length ?? 0;
+    }
+    return n;
   }
 
   List<String> get pointReasons =>
@@ -174,6 +192,9 @@ class ClassController extends ChangeNotifier {
       rolePresets = _repo.loadRolePresets();
       countdowns = await _repo.getCountdowns();
       timetable = await _repo.getTimetable();
+      await _repo.ensureTimetablePeriods();
+      timetablePeriods = await _repo.getTimetablePeriods();
+      teachingSubjects = await _repo.getTeachingSubjects();
       dutyList = await _repo.getDuty();
       homework = await _repo.getHomework(date: selectedDate);
       activeSemester = await _repo.ensureActiveSemester();
@@ -184,6 +205,9 @@ class ClassController extends ChangeNotifier {
         students = await _repo.getStudents();
         countdowns = await _repo.getCountdowns();
         timetable = await _repo.getTimetable();
+      await _repo.ensureTimetablePeriods();
+      timetablePeriods = await _repo.getTimetablePeriods();
+      teachingSubjects = await _repo.getTeachingSubjects();
         homework = await _repo.getHomework(date: selectedDate);
       }
 
@@ -294,8 +318,10 @@ class ClassController extends ChangeNotifier {
       settlements = await _repo.getSettlements();
       fundRecords = await _repo.getFundRecords();
       workLogs = await _repo.getWorkLogs();
-      lessonUnits = await _repo.getLessonUnits();
-      final allLessonFiles = await _repo.getLessonFiles();
+      lessonUnits = await _repo.getAllLessonUnits();
+      await _repo.seedDemoLessonsIfEmpty();
+      lessonUnits = await _repo.getAllLessonUnits();
+      final allLessonFiles = await _repo.getAllLessonFiles();
       lessonFilesByUnit = {};
       for (final f in allLessonFiles) {
         lessonFilesByUnit.putIfAbsent(f.unitId, () => []).add(f);
@@ -575,6 +601,27 @@ class ClassController extends ChangeNotifier {
 
   Future<String> exportAttendanceTemplateFile() =>
       _writeExcelTemplate('考勤导入示例.xlsx', AttendanceBatchExcel.template());
+
+  /// 导出当前班级、当前日期的考勤表，并返回文件路径
+  Future<String> exportAttendanceFile() async {
+    final date = selectedDate;
+    final classTitle = currentClass?.displayTitle ?? profile.displayTitle;
+    final remarks = <String, String>{
+      for (final r in selectedAttendance)
+        if (r.remark.trim().isNotEmpty) r.studentId: r.remark.trim(),
+    };
+    final bytes = AttendanceBatchExcel.export(
+      classTitle: classTitle,
+      date: date,
+      students: students,
+      statusByStudent: attendanceMap,
+      remarkByStudent: remarks,
+    );
+    final safeDate = date.replaceAll('-', '');
+    final fileName = '考勤_${classTitle}_$safeDate.xlsx'
+        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    return _writeExcelTemplate(fileName, bytes);
+  }
 
   Future<BatchImportResult> importAttendanceFromBytes(Uint8List bytes) async {
     final parsed = AttendanceBatchExcel.parse(bytes);
@@ -1232,16 +1279,32 @@ class ClassController extends ChangeNotifier {
       lessonFilesByUnit[unitId] ?? const [];
 
   Future<void> _refreshLessons() async {
-    lessonUnits = await _repo.getLessonUnits();
-    final all = await _repo.getLessonFiles();
+    lessonUnits = await _repo.getAllLessonUnits();
+    final all = await _repo.getAllLessonFiles();
     lessonFilesByUnit = {};
     for (final f in all) {
       lessonFilesByUnit.putIfAbsent(f.unitId, () => []).add(f);
     }
   }
 
-  Future<void> saveLessonUnit(LessonUnit unit) async {
-    await _repo.upsertLessonUnit(unit);
+  String? classIdOfLesson(String unitId) {
+    for (final u in lessonUnits) {
+      if (u.id == unitId) {
+        return u.classId.isNotEmpty ? u.classId : currentClass?.id;
+      }
+    }
+    return currentClass?.id;
+  }
+
+  String classTitleOf(String classId) {
+    for (final c in classes) {
+      if (c.id == classId) return c.displayTitle;
+    }
+    return '未知班级';
+  }
+
+  Future<void> saveLessonUnit(LessonUnit unit, {String? classId}) async {
+    await _repo.upsertLessonUnit(unit, classId: classId);
     await _refreshLessons();
     notifyListeners();
   }
@@ -1256,11 +1319,13 @@ class ClassController extends ChangeNotifier {
     required String unitId,
     required String sourcePath,
     required String originalName,
+    String? classId,
   }) async {
     final file = await _repo.importLessonFile(
       unitId: unitId,
       sourcePath: sourcePath,
       originalName: originalName,
+      classId: classId ?? classIdOfLesson(unitId),
     );
     await _refreshLessons();
     notifyListeners();
@@ -1268,13 +1333,19 @@ class ClassController extends ChangeNotifier {
   }
 
   Future<void> deleteLessonFile(LessonFile file) async {
-    await _repo.deleteLessonFile(file);
+    await _repo.deleteLessonFile(
+      file,
+      classId: classIdOfLesson(file.unitId),
+    );
     await _refreshLessons();
     notifyListeners();
   }
 
-  Future<String> lessonFilePath(LessonFile file) =>
-      _repo.lessonFileAbsolutePath(file);
+  Future<String> lessonFilePath(LessonFile file, {String? classId}) =>
+      _repo.lessonFileAbsolutePath(
+        file,
+        classId: classId ?? classIdOfLesson(file.unitId),
+      );
 
   Future<void> saveWorkLog({
     String? id,
@@ -1716,6 +1787,53 @@ class ClassController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> saveTimetablePeriod(TimetablePeriod period) async {
+    await _repo.upsertTimetablePeriod(period);
+    timetablePeriods = await _repo.getTimetablePeriods();
+    notifyListeners();
+  }
+
+  Future<void> addTimetablePeriod() async {
+    await _repo.addTimetablePeriod();
+    timetablePeriods = await _repo.getTimetablePeriods();
+    notifyListeners();
+  }
+
+  Future<void> deleteLastTimetablePeriod() async {
+    await _repo.deleteLastTimetablePeriod();
+    timetablePeriods = await _repo.getTimetablePeriods();
+    timetable = await _repo.getTimetable();
+    notifyListeners();
+  }
+
+  Future<void> addTeachingSubject(String subject) async {
+    final t = subject.trim();
+    if (t.isEmpty || teachingSubjects.contains(t)) return;
+    await _repo.setTeachingSubjects([...teachingSubjects, t]);
+    teachingSubjects = await _repo.getTeachingSubjects();
+    notifyListeners();
+  }
+
+  Future<void> removeTeachingSubject(String subject) async {
+    final next = teachingSubjects.where((s) => s != subject).toList();
+    await _repo.setTeachingSubjects(next);
+    teachingSubjects = await _repo.getTeachingSubjects();
+    notifyListeners();
+  }
+
+  bool isMyTeachingSubject(String? subject) {
+    final s = subject?.trim() ?? '';
+    if (s.isEmpty) return false;
+    return teachingSubjects.contains(s);
+  }
+
+  TimetablePeriod? periodAt(int period) {
+    for (final p in timetablePeriods) {
+      if (p.period == period) return p;
+    }
+    return null;
+  }
+
   String? subjectAt(int weekday, int period) {
     for (final s in timetable) {
       if (s.weekday == weekday && s.period == period) return s.subject;
@@ -1723,14 +1841,15 @@ class ClassController extends ChangeNotifier {
     return null;
   }
 
-  /// 今日课程科目（按节次）
-  List<String> get todaySubjects {
+  /// 老师今日授课科目（按节次，仅显示本人授课）
+  List<String> get todayTeachingSubjects {
     final w = DateTime.now().weekday;
     final slots = timetable.where((s) => s.weekday == w).toList()
       ..sort((a, b) => a.period.compareTo(b.period));
     return [
       for (final s in slots)
-        if (s.subject.trim().isNotEmpty) s.subject.trim(),
+        if (s.subject.trim().isNotEmpty && isMyTeachingSubject(s.subject))
+          s.subject.trim(),
     ];
   }
 

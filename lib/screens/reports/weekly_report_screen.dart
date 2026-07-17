@@ -46,7 +46,7 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
     final top = ctrl.rankedByPoints.take(5).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('本周概况')),
+      appBar: PageAppBar(title: const Text('本周概况')),
       body: _loading
           ? const Center(child: CircularProgressIndicator.adaptive())
           : ListView(

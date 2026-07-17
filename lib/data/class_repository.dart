@@ -29,6 +29,8 @@ class ClassRepository {
     'exams',
     'semesters',
     'timetable',
+    'timetable_periods',
+    'teaching_subjects',
     'lesson_units',
     'lesson_files',
     'exam_files',
@@ -1035,6 +1037,124 @@ class ClassRepository {
     );
   }
 
+  Future<List<TimetablePeriod>> getTimetablePeriods() async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'timetable_periods',
+      where: 'class_id = ?',
+      whereArgs: [currentClassId],
+      orderBy: 'period ASC',
+    );
+    if (rows.isEmpty) return TimetablePeriod.defaults();
+    return rows
+        .map(
+          (r) => TimetablePeriod(
+            period: r['period']! as int,
+            label: (r['label'] as String?) ?? '',
+            startTime: (r['start_time'] as String?) ?? '',
+            endTime: (r['end_time'] as String?) ?? '',
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> ensureTimetablePeriods() async {
+    final db = await AppDatabase.instance.database;
+    final count = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM timetable_periods WHERE class_id = ?',
+            [currentClassId],
+          ),
+        ) ??
+        0;
+    if (count > 0) return;
+    for (final p in TimetablePeriod.defaults()) {
+      await upsertTimetablePeriod(p);
+    }
+  }
+
+  Future<void> upsertTimetablePeriod(TimetablePeriod period) async {
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'timetable_periods',
+      {
+        'class_id': currentClassId,
+        'period': period.period,
+        'label': period.label,
+        'start_time': period.startTime,
+        'end_time': period.endTime,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> addTimetablePeriod() async {
+    final periods = await getTimetablePeriods();
+    final next = periods.isEmpty ? 1 : periods.last.period + 1;
+    await upsertTimetablePeriod(
+      TimetablePeriod(period: next, label: '第$next节'),
+    );
+  }
+
+  Future<void> deleteLastTimetablePeriod() async {
+    final periods = await getTimetablePeriods();
+    if (periods.length <= 1) {
+      throw StateError('至少保留一节');
+    }
+    final last = periods.last.period;
+    final db = await AppDatabase.instance.database;
+    await db.delete(
+      'timetable_periods',
+      where: 'class_id = ? AND period = ?',
+      whereArgs: [currentClassId, last],
+    );
+    await db.delete(
+      'timetable',
+      where: 'class_id = ? AND period = ?',
+      whereArgs: [currentClassId, last],
+    );
+  }
+
+  Future<List<String>> getTeachingSubjects() async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'teaching_subjects',
+      where: 'class_id = ?',
+      whereArgs: [currentClassId],
+      orderBy: 'sort_order ASC, subject ASC',
+    );
+    if (rows.isNotEmpty) {
+      return rows.map((r) => r['subject']! as String).toList();
+    }
+    final cls = await getClass(currentClassId);
+    final sub = cls?.subject.trim() ?? '';
+    if (sub.isNotEmpty) return [sub];
+    return [];
+  }
+
+  Future<void> setTeachingSubjects(List<String> subjects) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete(
+      'teaching_subjects',
+      where: 'class_id = ?',
+      whereArgs: [currentClassId],
+    );
+    var order = 0;
+    for (final s in subjects) {
+      final t = s.trim();
+      if (t.isEmpty) continue;
+      await db.insert(
+        'teaching_subjects',
+        {
+          'class_id': currentClassId,
+          'subject': t,
+          'sort_order': order++,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
   // ── Countdowns ────────────────────────────────────────────────────────────
 
   Future<List<CountdownItem>> getCountdowns() async {
@@ -1524,23 +1644,70 @@ class ClassRepository {
     return rows.map(LessonUnit.fromMap).toList();
   }
 
-  Future<void> upsertLessonUnit(LessonUnit item) async {
+  /// 全部班级的授课进度（授课页跨班查看）
+  Future<List<LessonUnit>> getAllLessonUnits() async {
     final db = await AppDatabase.instance.database;
+    final classIds = (await getClasses()).map((c) => c.id).toSet();
+    if (classIds.isEmpty) return [];
+    final rows = await db.query(
+      'lesson_units',
+      orderBy: 'planned_date ASC, sort_order ASC, updated_at DESC',
+    );
+    return rows
+        .map(LessonUnit.fromMap)
+        .where((u) => classIds.contains(u.classId))
+        .toList();
+  }
+
+  Future<void> upsertLessonUnit(LessonUnit item, {String? classId}) async {
+    final db = await AppDatabase.instance.database;
+    final cid = classId ??
+        (item.classId.isNotEmpty ? item.classId : currentClassId);
     await db.insert(
       'lesson_units',
-      _withClass(item.toMap()),
+      {...item.toMap(), 'class_id': cid},
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
+  Future<int> countLessonUnitsForClass(String classId) async {
+    final db = await AppDatabase.instance.database;
+    final r = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM lesson_units WHERE class_id = ?',
+      [classId],
+    );
+    return (r.first['c'] as int?) ?? 0;
+  }
+
   Future<void> deleteLessonUnit(String id) async {
     final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'lesson_units',
+      columns: ['class_id'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    final cid = rows.isNotEmpty
+        ? rows.first['class_id'] as String? ?? currentClassId
+        : currentClassId;
     await db.delete('lesson_files', where: 'unit_id = ?', whereArgs: [id]);
     await db.delete('lesson_units', where: 'id = ?', whereArgs: [id]);
-    await LessonArchiveStore.deleteUnitDir(
-      classId: currentClassId,
-      unitId: id,
+    await LessonArchiveStore.deleteUnitDir(classId: cid, unitId: id);
+  }
+
+  Future<List<LessonFile>> getAllLessonFiles() async {
+    final db = await AppDatabase.instance.database;
+    final classIds = (await getClasses()).map((c) => c.id).toSet();
+    if (classIds.isEmpty) return [];
+    final rows = await db.query(
+      'lesson_files',
+      orderBy: 'created_at DESC',
     );
+    return rows
+        .where((r) => classIds.contains(r['class_id'] as String?))
+        .map(LessonFile.fromMap)
+        .toList();
   }
 
   Future<List<LessonFile>> getLessonFiles({String? unitId}) async {
@@ -1570,11 +1737,24 @@ class ClassRepository {
     );
   }
 
-  Future<void> deleteLessonFile(LessonFile item) async {
+  Future<void> deleteLessonFile(LessonFile item, {String? classId}) async {
     final db = await AppDatabase.instance.database;
+    String cid = classId ?? currentClassId;
+    if (classId == null) {
+      final rows = await db.query(
+        'lesson_files',
+        columns: ['class_id'],
+        where: 'id = ?',
+        whereArgs: [item.id],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        cid = rows.first['class_id'] as String? ?? currentClassId;
+      }
+    }
     await db.delete('lesson_files', where: 'id = ?', whereArgs: [item.id]);
     await LessonArchiveStore.deleteFile(
-      classId: currentClassId,
+      classId: cid,
       unitId: item.unitId,
       storedName: item.storedName,
     );
@@ -1585,9 +1765,11 @@ class ClassRepository {
     required String sourcePath,
     required String originalName,
     String mimeHint = '',
+    String? classId,
   }) async {
+    final cid = classId ?? currentClassId;
     final imported = await LessonArchiveStore.importFile(
-      classId: currentClassId,
+      classId: cid,
       unitId: unitId,
       sourcePath: sourcePath,
       originalName: originalName,
@@ -1601,13 +1783,21 @@ class ClassRepository {
       sizeBytes: imported.sizeBytes,
       createdAt: DateTime.now(),
     );
-    await upsertLessonFile(file);
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'lesson_files',
+      {...file.toMap(), 'class_id': cid},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
     return file;
   }
 
-  Future<String> lessonFileAbsolutePath(LessonFile item) =>
+  Future<String> lessonFileAbsolutePath(
+    LessonFile item, {
+    String? classId,
+  }) =>
       LessonArchiveStore.absolutePath(
-        classId: currentClassId,
+        classId: classId ?? currentClassId,
         unitId: item.unitId,
         storedName: item.storedName,
       );
@@ -2225,6 +2415,75 @@ class ClassRepository {
           createdAt: now,
         ),
       );
+    }
+
+    await seedDemoLessonsIfEmpty();
+  }
+
+  /// 各班级尚无课时时填充演示授课进度（不覆盖已有数据）
+  Future<void> seedDemoLessonsIfEmpty() async {
+    String ymd(DateTime t) =>
+        '${t.year.toString().padLeft(4, '0')}-'
+        '${t.month.toString().padLeft(2, '0')}-'
+        '${t.day.toString().padLeft(2, '0')}';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    final allClasses = await getClasses();
+    const lessonSamples = [
+      (
+        title: '第一单元 · 开篇',
+        chapter: '第 1 章',
+        status: LessonStatus.planned,
+        plannedOffset: 3,
+        taughtOffset: null,
+        note: '预习课文，梳理生字词',
+      ),
+      (
+        title: '第二单元 · 精读',
+        chapter: '第 2 章',
+        status: LessonStatus.teaching,
+        plannedOffset: 7,
+        taughtOffset: 5,
+        note: '课堂讨论进行中',
+      ),
+      (
+        title: '第三单元 · 复习',
+        chapter: '第 3 章',
+        status: LessonStatus.done,
+        plannedOffset: 14,
+        taughtOffset: 12,
+        note: '已完成单元测验讲评',
+      ),
+    ];
+    for (var ci = 0; ci < allClasses.length; ci++) {
+      final cls = allClasses[ci];
+      if (await countLessonUnitsForClass(cls.id) > 0) continue;
+      final subject = cls.subject.trim().isNotEmpty
+          ? cls.subject.trim()
+          : ['语文', '数学', '英语'][ci % 3];
+      var order = 0;
+      for (final s in lessonSamples) {
+        await upsertLessonUnit(
+          LessonUnit(
+            id: _uuid.v4(),
+            classId: cls.id,
+            title: s.title,
+            subject: subject,
+            chapter: s.chapter,
+            progressNote: s.note,
+            status: s.status,
+            plannedDate: ymd(today.add(Duration(days: s.plannedOffset))),
+            taughtDate: s.taughtOffset == null
+                ? ''
+                : ymd(today.subtract(Duration(days: s.taughtOffset!))),
+            sortOrder: order++,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          classId: cls.id,
+        );
+      }
     }
   }
 }

@@ -12,7 +12,6 @@ import 'package:smart_class/widgets/excel_import_sheet.dart';
 /// 工作留痕：安全教育 / 主题班会 / 学生谈话 / 心理关注 / 家长沟通 / 家访
 class WorkLogsScreen extends StatefulWidget {
   const WorkLogsScreen({super.key, this.initialCategory});
-
   final WorkLogCategory? initialCategory;
 
   @override
@@ -34,7 +33,7 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
     final list = ctrl.workLogsOf(_filter);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('工作留痕'),
         actions: [
           IconButton(
@@ -69,6 +68,7 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
                   child: FilterChip(
                     label: Text('全部 (${ctrl.workLogs.length})'),
                     selected: _filter == null,
+                    showCheckmark: false,
                     onSelected: (_) => setState(() => _filter = null),
                   ),
                 ),
@@ -78,6 +78,7 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
                     child: FilterChip(
                       label: Text('${c.label} (${ctrl.workLogCount(c)})'),
                       selected: _filter == c,
+                      showCheckmark: false,
                       onSelected: (_) => setState(() => _filter = c),
                     ),
                   ),
@@ -189,147 +190,157 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
     }
   }
 
-  Future<void> _edit(
-    BuildContext context, {
-    WorkLog? existing,
-    WorkLogCategory? category,
-  }) async {
-    final ctrl = context.read<ClassController>();
-    final titleCtrl = TextEditingController(text: existing?.title ?? '');
-    final contentCtrl = TextEditingController(text: existing?.content ?? '');
-    var cat = existing?.category ?? category ?? WorkLogCategory.classMeeting;
-    var date = existing != null
-        ? (DateTime.tryParse(existing.date) ?? DateTime.now())
-        : DateTime.now();
-    var selectedStudents = {...?existing?.studentIdList};
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      existing == null ? '新建留痕' : '编辑留痕',
-                      style: Theme.of(ctx).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    Text('类别', style: TextStyle(color: AppTheme.tertiaryLabel)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final c in WorkLogCategory.values)
-                          ChoiceChip(
-                            label: Text(c.label),
-                            selected: cat == c,
-                            onSelected: (_) => setState(() => cat = c),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: titleCtrl,
-                      decoration: InputDecoration(
-                        labelText: '标题',
-                        hintText: cat.hint,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('日期'),
-                      subtitle: Text(DateFormat('yyyy-MM-dd').format(date)),
-                      trailing: const Icon(AppIcons.calendar),
-                      onTap: () async {
-                        final d = await showDatePicker(
-                          context: ctx,
-                          initialDate: date,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime(2100),
-                        );
-                        if (d != null) setState(() => date = d);
-                      },
-                    ),
-                    TextField(
-                      controller: contentCtrl,
-                      minLines: 3,
-                      maxLines: 6,
-                      decoration: const InputDecoration(
-                        labelText: '内容记录',
-                        hintText: '过程、要点、结果与后续跟进',
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                    if (_needsStudent(cat) && ctrl.students.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        '关联学生（可选）',
-                        style: TextStyle(color: AppTheme.tertiaryLabel),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final s in ctrl.students)
-                            FilterChip(
-                              label: Text(s.name),
-                              selected: selectedStudents.contains(s.id),
-                              onSelected: (v) => setState(() {
-                                if (v) {
-                                  selectedStudents.add(s.id);
-                                } else {
-                                  selectedStudents.remove(s.id);
-                                }
-                              }),
-                            ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () async {
-                        if (titleCtrl.text.trim().isEmpty) return;
-                        await ctrl.saveWorkLog(
-                          id: existing?.id,
-                          category: cat,
-                          title: titleCtrl.text,
-                          content: contentCtrl.text,
-                          date: DateFormat('yyyy-MM-dd').format(date),
-                          studentIds: selectedStudents.toList(),
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('保存'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+  void _edit(BuildContext context, {WorkLog? existing, WorkLogCategory? category}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _WorkLogEditScreen(
+          existing: existing,
+          initialCategory: category,
+        ),
+      ),
     );
   }
+}
 
-  bool _needsStudent(WorkLogCategory c) {
-    return c == WorkLogCategory.studentTalk ||
-        c == WorkLogCategory.mentalCare ||
-        c == WorkLogCategory.parentComm ||
-        c == WorkLogCategory.homeVisit;
+class _WorkLogEditScreen extends StatefulWidget {
+  const _WorkLogEditScreen({this.existing, this.initialCategory});
+  final WorkLog? existing;
+  final WorkLogCategory? initialCategory;
+
+  @override
+  State<_WorkLogEditScreen> createState() => _WorkLogEditScreenState();
+}
+
+class _WorkLogEditScreenState extends State<_WorkLogEditScreen> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _contentCtrl;
+  late WorkLogCategory _cat;
+  late DateTime _date;
+  late Set<String> _selectedStudents;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _titleCtrl = TextEditingController(text: e?.title ?? '');
+    _contentCtrl = TextEditingController(text: e?.content ?? '');
+    _cat = e?.category ?? widget.initialCategory ?? WorkLogCategory.classMeeting;
+    _date = e != null ? (DateTime.tryParse(e.date) ?? DateTime.now()) : DateTime.now();
+    _selectedStudents = {...?e?.studentIdList};
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _contentCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _needsStudent(WorkLogCategory c) =>
+      c == WorkLogCategory.studentTalk ||
+      c == WorkLogCategory.mentalCare ||
+      c == WorkLogCategory.parentComm ||
+      c == WorkLogCategory.homeVisit;
+
+  Future<void> _save() async {
+    if (_titleCtrl.text.trim().isEmpty) return;
+    await context.read<ClassController>().saveWorkLog(
+          id: widget.existing?.id,
+          category: _cat,
+          title: _titleCtrl.text,
+          content: _contentCtrl.text,
+          date: DateFormat('yyyy-MM-dd').format(_date),
+          studentIds: _selectedStudents.toList(),
+        );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ctrl = context.watch<ClassController>();
+    return Scaffold(
+      appBar: PageAppBar(
+        title: Text(widget.existing == null ? '新建留痕' : '编辑留痕'),
+        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          Text('类别', style: TextStyle(color: AppTheme.tertiaryLabel)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final c in WorkLogCategory.values)
+                ChoiceChip(
+                  label: Text(c.label),
+                  selected: _cat == c,
+                  showCheckmark: false,
+                  onSelected: (_) => setState(() => _cat = c),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _titleCtrl,
+            decoration: InputDecoration(labelText: '标题', hintText: _cat.hint),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('日期'),
+            subtitle: Text(DateFormat('yyyy-MM-dd').format(_date)),
+            trailing: const Icon(AppIcons.calendar),
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _date,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+              );
+              if (d != null) setState(() => _date = d);
+            },
+          ),
+          TextField(
+            controller: _contentCtrl,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(
+              labelText: '内容记录',
+              hintText: '过程、要点、结果与后续跟进',
+              alignLabelWithHint: true,
+            ),
+          ),
+          if (_needsStudent(_cat) && ctrl.students.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('关联学生（可选）',
+                style: TextStyle(color: AppTheme.tertiaryLabel)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in ctrl.students)
+                  FilterChip(
+                    label: Text(s.name),
+                    selected: _selectedStudents.contains(s.id),
+                    showCheckmark: false,
+                    onSelected: (v) => setState(() {
+                      if (v) {
+                        _selectedStudents.add(s.id);
+                      } else {
+                        _selectedStudents.remove(s.id);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _save, child: const Text('保存')),
+        ],
+      ),
+    );
   }
 }

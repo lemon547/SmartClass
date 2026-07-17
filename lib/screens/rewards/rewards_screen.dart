@@ -1,6 +1,5 @@
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
-
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
@@ -16,7 +15,7 @@ class RewardsScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('积分兑换'),
         actions: [
           IconButton(
@@ -69,75 +68,11 @@ class RewardsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _editReward(BuildContext context, {RewardItem? reward}) async {
-    final ctrl = context.read<ClassController>();
-    final name = TextEditingController(text: reward?.name ?? '');
-    final cost = TextEditingController(text: '${reward?.cost ?? 10}');
-    final stock = TextEditingController(text: '${reward?.stock ?? 20}');
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(reward == null ? '添加奖品' : '编辑奖品',
-                  style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 12),
-              TextField(
-                  controller: name,
-                  decoration: const InputDecoration(labelText: '名称')),
-              const SizedBox(height: 8),
-              TextField(
-                controller: cost,
-                decoration: const InputDecoration(labelText: '所需积分'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: stock,
-                decoration: const InputDecoration(labelText: '库存'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () async {
-                  final c = int.tryParse(cost.text) ?? 0;
-                  final s = int.tryParse(stock.text) ?? 0;
-                  if (name.text.trim().isEmpty || c <= 0) return;
-                  await ctrl.saveReward(
-                    id: reward?.id,
-                    name: name.text,
-                    cost: c,
-                    stock: s,
-                  );
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                child: const Text('保存'),
-              ),
-              if (reward != null) ...[
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () async {
-                    await ctrl.deleteReward(reward.id);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  child: Text('删除奖品',
-                      style: TextStyle(color: AppTheme.destructive)),
-                ),
-              ],
-            ],
-          ),
-        );
-      },
+  void _editReward(BuildContext context, {RewardItem? reward}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _RewardEditScreen(reward: reward),
+      ),
     );
   }
 
@@ -202,6 +137,95 @@ class RewardsScreen extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+class _RewardEditScreen extends StatefulWidget {
+  const _RewardEditScreen({this.reward});
+  final RewardItem? reward;
+
+  @override
+  State<_RewardEditScreen> createState() => _RewardEditScreenState();
+}
+
+class _RewardEditScreenState extends State<_RewardEditScreen> {
+  late final TextEditingController _name;
+  late final TextEditingController _cost;
+  late final TextEditingController _stock;
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.reward?.name ?? '');
+    _cost = TextEditingController(text: '${widget.reward?.cost ?? 10}');
+    _stock = TextEditingController(text: '${widget.reward?.stock ?? 20}');
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _cost.dispose();
+    _stock.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final c = int.tryParse(_cost.text) ?? 0;
+    final s = int.tryParse(_stock.text) ?? 0;
+    if (_name.text.trim().isEmpty || c <= 0) return;
+    await context.read<ClassController>().saveReward(
+          id: widget.reward?.id,
+          name: _name.text,
+          cost: c,
+          stock: s,
+        );
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(
+        title: Text(widget.reward == null ? '添加奖品' : '编辑奖品'),
+        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(labelText: '名称'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _cost,
+            decoration: const InputDecoration(labelText: '所需积分'),
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _stock,
+            decoration: const InputDecoration(labelText: '库存'),
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _save, child: const Text('保存')),
+          if (widget.reward != null) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () async {
+                await context
+                    .read<ClassController>()
+                    .deleteReward(widget.reward!.id);
+                if (mounted) Navigator.pop(context);
+              },
+              child: Text('删除奖品',
+                  style: TextStyle(color: AppTheme.destructive)),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

@@ -17,7 +17,7 @@ class FundScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('班费'),
         actions: [
           IconButton(
@@ -117,101 +117,133 @@ class FundScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _edit(
+  void _edit(
     BuildContext context, {
     String? id,
     String title = '',
     int amount = 0,
     String date = '',
     String note = '',
-  }) async {
-    final ctrl = context.read<ClassController>();
-    final titleCtrl = TextEditingController(text: title);
-    final amountCtrl = TextEditingController(
-      text: amount == 0 ? '' : amount.toString(),
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FundEditScreen(
+          id: id,
+          title: title,
+          amount: amount,
+          date: date,
+          note: note,
+        ),
+      ),
     );
-    final noteCtrl = TextEditingController(text: note);
-    var picked = date.isNotEmpty
-        ? (DateTime.tryParse(date) ?? DateTime.now())
-        : DateTime.now();
+  }
+}
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(id == null ? '记一笔' : '编辑',
-                      style: Theme.of(ctx).textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(labelText: '说明'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: amountCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      signed: true,
-                    ),
-                    decoration: const InputDecoration(
-                      labelText: '金额（正收入 / 负支出）',
-                      hintText: '如 200 或 -50',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: noteCtrl,
-                    decoration: const InputDecoration(labelText: '备注（可选）'),
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('日期'),
-                    subtitle: Text(DateFormat('yyyy-MM-dd').format(picked)),
-                    trailing: const Icon(AppIcons.calendar),
-                    onTap: () async {
-                      final d = await showDatePicker(
-                        context: ctx,
-                        initialDate: picked,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                      );
-                      if (d != null) setState(() => picked = d);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () async {
-                      final a = int.tryParse(amountCtrl.text.trim());
-                      if (titleCtrl.text.trim().isEmpty || a == null) return;
-                      await ctrl.saveFundRecord(
-                        id: id,
-                        title: titleCtrl.text,
-                        amount: a,
-                        date: DateFormat('yyyy-MM-dd').format(picked),
-                        note: noteCtrl.text,
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('保存'),
-                  ),
-                ],
-              ),
-            );
-          },
+class _FundEditScreen extends StatefulWidget {
+  const _FundEditScreen({
+    this.id,
+    this.title = '',
+    this.amount = 0,
+    this.date = '',
+    this.note = '',
+  });
+  final String? id;
+  final String title;
+  final int amount;
+  final String date;
+  final String note;
+
+  @override
+  State<_FundEditScreen> createState() => _FundEditScreenState();
+}
+
+class _FundEditScreenState extends State<_FundEditScreen> {
+  late final TextEditingController _title;
+  late final TextEditingController _amount;
+  late final TextEditingController _note;
+  late DateTime _picked;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.title);
+    _amount = TextEditingController(
+        text: widget.amount == 0 ? '' : widget.amount.toString());
+    _note = TextEditingController(text: widget.note);
+    _picked = widget.date.isNotEmpty
+        ? (DateTime.tryParse(widget.date) ?? DateTime.now())
+        : DateTime.now();
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final a = int.tryParse(_amount.text.trim());
+    if (_title.text.trim().isEmpty || a == null) return;
+    await context.read<ClassController>().saveFundRecord(
+          id: widget.id,
+          title: _title.text,
+          amount: a,
+          date: DateFormat('yyyy-MM-dd').format(_picked),
+          note: _note.text,
         );
-      },
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(
+        title: Text(widget.id == null ? '记一笔' : '编辑'),
+        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: '说明'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _amount,
+            keyboardType:
+                const TextInputType.numberWithOptions(signed: true),
+            decoration: const InputDecoration(
+              labelText: '金额（正收入 / 负支出）',
+              hintText: '如 200 或 -50',
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _note,
+            decoration: const InputDecoration(labelText: '备注（可选）'),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('日期'),
+            subtitle: Text(DateFormat('yyyy-MM-dd').format(_picked)),
+            trailing: const Icon(AppIcons.calendar),
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _picked,
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+              );
+              if (d != null) setState(() => _picked = d);
+            },
+          ),
+          const SizedBox(height: 20),
+          FilledButton(onPressed: _save, child: const Text('保存')),
+        ],
+      ),
     );
   }
 }

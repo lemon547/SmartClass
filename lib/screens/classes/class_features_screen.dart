@@ -22,7 +22,7 @@ class ClassFeaturesScreen extends StatelessWidget {
         .toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('本班功能')),
+      appBar: PageAppBar(title: const Text('本班功能')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 28),
         children: [

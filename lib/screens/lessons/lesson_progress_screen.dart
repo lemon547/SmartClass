@@ -2,7 +2,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_class/theme/app_icons.dart';
-import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
@@ -10,7 +9,7 @@ import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/excel_import_sheet.dart';
-import 'package:uuid/uuid.dart';
+import 'package:smart_class/screens/lessons/lesson_edit_screen.dart';
 
 /// 授课进度 + PPT/课件本地存档
 class LessonProgressScreen extends StatefulWidget {
@@ -32,7 +31,7 @@ class _LessonProgressScreenState extends State<LessonProgressScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('授课进度'),
         actions: [
           IconButton(
@@ -116,178 +115,8 @@ class _LessonProgressScreenState extends State<LessonProgressScreen> {
     );
   }
 
-  Future<void> _editUnit(BuildContext context, {LessonUnit? existing}) async {
-    final ctrl = context.read<ClassController>();
-    final title = TextEditingController(text: existing?.title ?? '');
-    final subject = TextEditingController(text: existing?.subject ?? '');
-    final chapter = TextEditingController(text: existing?.chapter ?? '');
-    final note = TextEditingController(text: existing?.progressNote ?? '');
-    var status = existing?.status ?? LessonStatus.planned;
-    var planned = existing?.plannedDate ?? '';
-    var taught = existing?.taughtDate ?? '';
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 8,
-                bottom: MediaQuery.viewInsetsOf(ctx).bottom + 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      existing == null ? '添加课时' : '编辑课时',
-                      style: Theme.of(ctx).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: title,
-                      decoration: const InputDecoration(labelText: '课题 / 课时名'),
-                    ),
-                    TextField(
-                      controller: subject,
-                      decoration: const InputDecoration(labelText: '科目'),
-                    ),
-                    TextField(
-                      controller: chapter,
-                      decoration: const InputDecoration(labelText: '章节'),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('进度', style: TextStyle(color: AppTheme.secondaryLabel)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        for (final s in LessonStatus.values)
-                          ChoiceChip(
-                            label: Text(s.label),
-                            selected: status == s,
-                            onSelected: (_) => setLocal(() => status = s),
-                          ),
-                      ],
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('计划日期'),
-                      subtitle: Text(planned.isEmpty ? '未设置' : planned),
-                      trailing: const Icon(Icons.calendar_today_outlined),
-                      onTap: () async {
-                        final now = DateTime.now();
-                        final d = await showDatePicker(
-                          context: ctx,
-                          initialDate: DateTime.tryParse(planned) ?? now,
-                          firstDate: DateTime(now.year - 1),
-                          lastDate: DateTime(now.year + 2),
-                        );
-                        if (d != null) {
-                          setLocal(
-                            () => planned = DateFormat('yyyy-MM-dd').format(d),
-                          );
-                        }
-                      },
-                    ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('实际授课日'),
-                      subtitle: Text(taught.isEmpty ? '未设置' : taught),
-                      trailing: const Icon(Icons.event_available_outlined),
-                      onTap: () async {
-                        final now = DateTime.now();
-                        final d = await showDatePicker(
-                          context: ctx,
-                          initialDate: DateTime.tryParse(taught) ?? now,
-                          firstDate: DateTime(now.year - 1),
-                          lastDate: DateTime(now.year + 2),
-                        );
-                        if (d != null) {
-                          setLocal(
-                            () => taught = DateFormat('yyyy-MM-dd').format(d),
-                          );
-                        }
-                      },
-                    ),
-                    TextField(
-                      controller: note,
-                      decoration: const InputDecoration(labelText: '进度备注'),
-                      maxLines: 3,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () {
-                        if (title.text.trim().isEmpty) return;
-                        Navigator.pop(ctx, true);
-                      },
-                      child: const Text('保存'),
-                    ),
-                    if (existing != null) ...[
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: () async {
-                          Navigator.pop(ctx, false);
-                          final ok = await showCupertinoDialog<bool>(
-                            context: context,
-                            builder: (d) => CupertinoAlertDialog(
-                              title: const Text('删除该课时？'),
-                              content: const Text('将同时删除已上传的课件文件。'),
-                              actions: [
-                                CupertinoDialogAction(
-                                  onPressed: () => Navigator.pop(d, false),
-                                  child: const Text('取消'),
-                                ),
-                                CupertinoDialogAction(
-                                  isDestructiveAction: true,
-                                  onPressed: () => Navigator.pop(d, true),
-                                  child: const Text('删除'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (ok == true && context.mounted) {
-                            await ctrl.deleteLessonUnit(existing.id);
-                          }
-                        },
-                        child: Text(
-                          '删除课时',
-                          style: TextStyle(color: AppTheme.destructive),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (saved != true) return;
-    final now = DateTime.now();
-    await ctrl.saveLessonUnit(
-      LessonUnit(
-        id: existing?.id ?? const Uuid().v4(),
-        title: title.text.trim(),
-        subject: subject.text.trim(),
-        chapter: chapter.text.trim(),
-        progressNote: note.text.trim(),
-        status: status,
-        plannedDate: planned,
-        taughtDate: taught,
-        sortOrder: existing?.sortOrder ?? ctrl.lessonUnits.length,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      ),
-    );
+  void _editUnit(BuildContext context, {LessonUnit? existing}) {
+    LessonEditScreen.push(context, existing: existing);
   }
 }
 
@@ -308,14 +137,14 @@ class LessonUnitDetailScreen extends StatelessWidget {
     }
     if (unit == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('课时')),
+        appBar: PageAppBar(title: const Text('课时')),
         body: const Center(child: Text('课时不存在或已删除')),
       );
     }
     final files = ctrl.filesOfLesson(unitId);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: Text(unit.title),
         actions: [
           IconButton(

@@ -9,7 +9,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
-import 'package:smart_class/screens/grades/exam_edit_sheet.dart';
+import 'package:smart_class/screens/grades/exam_edit_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -43,7 +43,7 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
     final exam = ctrl.examById(widget.examId);
     if (exam == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('考试')),
+        appBar: PageAppBar(title: const Text('考试')),
         body: const Center(child: Text('考试不存在')),
       );
     }
@@ -52,12 +52,12 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
     final stats = ctrl.analyzeExam(widget.examId);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: Text(exam.title),
         actions: [
           IconButton(
             tooltip: '编辑考试',
-            onPressed: () => showExamEditSheet(context, existing: exam),
+            onPressed: () => ExamEditScreen.push(context, existing: exam),
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(

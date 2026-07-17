@@ -17,7 +17,7 @@ class DutyScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('值日安排'),
         actions: [
           IconButton(

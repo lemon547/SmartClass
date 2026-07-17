@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/grades/exam_detail_screen.dart';
-import 'package:smart_class/screens/grades/exam_edit_sheet.dart';
+import 'package:smart_class/screens/grades/exam_edit_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -35,12 +35,12 @@ class _GradesScreenState extends State<GradesScreen> {
     final list = ctrl.examsOf(_filter);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('成绩分析'),
         actions: [
           IconButton(
             tooltip: '新建考试',
-            onPressed: () => showExamEditSheet(context),
+            onPressed: () => ExamEditScreen.push(context),
             icon: const Icon(AppIcons.plus),
           ),
         ],
@@ -58,6 +58,7 @@ class _GradesScreenState extends State<GradesScreen> {
                   child: FilterChip(
                     label: Text('全部 (${ctrl.exams.length})'),
                     selected: _filter == null,
+                    showCheckmark: false,
                     onSelected: (_) => setState(() => _filter = null),
                   ),
                 ),
@@ -69,6 +70,7 @@ class _GradesScreenState extends State<GradesScreen> {
                         '$c (${ctrl.exams.where((e) => e.category == c).length})',
                       ),
                       selected: _filter == c,
+                      showCheckmark: false,
                       onSelected: (_) => setState(() => _filter = c),
                     ),
                   ),
@@ -101,7 +103,7 @@ class _GradesScreenState extends State<GradesScreen> {
                           ),
                           const SizedBox(height: 16),
                           FilledButton(
-                            onPressed: () => showExamEditSheet(context),
+                            onPressed: () => ExamEditScreen.push(context),
                             child: const Text('新建考试'),
                           ),
                         ],
@@ -134,7 +136,7 @@ class _GradesScreenState extends State<GradesScreen> {
                                 ),
                               ),
                               onLongPress: () =>
-                                  showExamEditSheet(context, existing: e),
+                                  ExamEditScreen.push(context, existing: e),
                             ),
                         ],
                       ),

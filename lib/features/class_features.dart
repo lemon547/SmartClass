@@ -1,6 +1,6 @@
 import 'package:smart_class/models/models.dart';
 
-/// 功能 id（首页常用工具 /「我的」入口共用）
+/// 功能 id（首页常用工具 /「班级」入口共用）
 abstract final class ClassFeatureIds {
   static const students = 'students';
   static const rollCall = 'rollCall';
@@ -82,7 +82,7 @@ abstract final class ClassFeatures {
     ),
     ClassFeatureDef(
       id: ClassFeatureIds.timetable,
-      title: '课程表',
+      title: '班级课表',
       group: ClassFeatureGroup.teaching,
       defaultHomeroom: true,
       defaultSubject: true,

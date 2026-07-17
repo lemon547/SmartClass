@@ -1,6 +1,5 @@
 ﻿import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
-
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/providers/class_controller.dart';
@@ -15,7 +14,7 @@ class NotesScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: PageAppBar(
         title: const Text('班级记事'),
         actions: [
           IconButton(
@@ -61,57 +60,83 @@ class NotesScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _edit(
+  void _edit(
     BuildContext context, {
     String? id,
     String title = '',
     String content = '',
-  }) async {
-    final ctrl = context.read<ClassController>();
-    final t = TextEditingController(text: title);
-    final c = TextEditingController(text: content);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(id == null ? '新建记事' : '编辑记事',
-                  style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 12),
-              TextField(
-                  controller: t,
-                  decoration: const InputDecoration(labelText: '标题')),
-              const SizedBox(height: 8),
-              TextField(
-                controller: c,
-                minLines: 3,
-                maxLines: 6,
-                decoration: const InputDecoration(labelText: '内容'),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () async {
-                  if (t.text.trim().isEmpty) return;
-                  await ctrl.saveNote(
-                      id: id, title: t.text, content: c.text);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                child: const Text('保存'),
-              ),
-            ],
-          ),
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _NoteEditScreen(id: id, title: title, content: content),
+      ),
+    );
+  }
+}
+
+class _NoteEditScreen extends StatefulWidget {
+  const _NoteEditScreen({this.id, this.title = '', this.content = ''});
+  final String? id;
+  final String title;
+  final String content;
+
+  @override
+  State<_NoteEditScreen> createState() => _NoteEditScreenState();
+}
+
+class _NoteEditScreenState extends State<_NoteEditScreen> {
+  late final TextEditingController _title;
+  late final TextEditingController _content;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.title);
+    _content = TextEditingController(text: widget.content);
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _content.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_title.text.trim().isEmpty) return;
+    await context.read<ClassController>().saveNote(
+          id: widget.id,
+          title: _title.text,
+          content: _content.text,
         );
-      },
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: PageAppBar(
+        title: Text(widget.id == null ? '新建记事' : '编辑记事'),
+        actions: [TextButton(onPressed: _save, child: const Text('保存'))],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        children: [
+          TextField(
+            controller: _title,
+            decoration: const InputDecoration(labelText: '标题'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _content,
+            minLines: 3,
+            maxLines: 6,
+            decoration: const InputDecoration(labelText: '内容'),
+          ),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: _save, child: const Text('保存')),
+        ],
+      ),
     );
   }
 }

@@ -1,13 +1,12 @@
-import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
-
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/services/file_share.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
-import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -19,6 +18,7 @@ class AttendanceScreen extends StatefulWidget {
 class _AttendanceScreenState extends State<AttendanceScreen> {
   final _search = TextEditingController();
   String _query = '';
+  bool _exporting = false;
 
   @override
   void dispose() {
@@ -26,11 +26,45 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     super.dispose();
   }
 
+  Future<void> _exportAndShare(BuildContext context) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    final ctrl = context.read<ClassController>();
+    try {
+      if (ctrl.students.isEmpty) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前班级暂无学生，无法导出')),
+        );
+        return;
+      }
+      final path = await ctrl.exportAttendanceFile();
+      final classTitle =
+          ctrl.currentClass?.displayTitle ?? ctrl.profile.displayTitle;
+      final dateLabel = DateFormat('yyyy年M月d日')
+          .format(DateTime.tryParse(ctrl.selectedDate) ?? DateTime.now());
+      await FileShare.shareXlsx(
+        filePath: path,
+        subject: '$classTitle 考勤 $dateLabel',
+        text: '$classTitle · $dateLabel 考勤表',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
     final date = DateTime.tryParse(ctrl.selectedDate) ?? DateTime.now();
     final list = ctrl.searchStudents(_query);
+    final current = ctrl.currentClass;
 
     return Scaffold(
       body: SafeArea(
@@ -41,19 +75,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    tooltip: '导入导出',
-                    onPressed: () => showExcelImportActions(
-                      context: context,
-                      title: '考勤',
-                      downloadTemplate: () => context
-                          .read<ClassController>()
-                          .exportAttendanceTemplateFile(),
-                      importBytes: (bytes, _) => context
-                          .read<ClassController>()
-                          .importAttendanceFromBytes(bytes),
-                    ),
-                    icon: Icon(AppIcons.moreVert, color: AppTheme.blue),
+                  TextButton.icon(
+                    onPressed: _exporting ? null : () => _exportAndShare(context),
+                    icon: _exporting
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppTheme.blue,
+                            ),
+                          )
+                        : Icon(AppIcons.share, color: AppTheme.blue, size: 18),
+                    label: const Text('导出'),
                   ),
                   TextButton(
                     onPressed: () => ctrl.markAllPresent(),
@@ -62,6 +96,44 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 ],
               ),
             ),
+            if (ctrl.classes.length > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final c in ctrl.classes)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(c.displayTitle),
+                            selected: c.id == current?.id,
+                            onSelected: (_) {
+                              if (c.id != current?.id) {
+                                ctrl.switchClass(c.id);
+                              }
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              )
+            else if (current != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    current.displayTitle,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppTheme.secondaryLabel,
+                    ),
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Row(
@@ -131,8 +203,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             Expanded(
               child: list.isEmpty
                   ? Center(
-                      child: Text('暂无学生',
-                          style: TextStyle(color: AppTheme.tertiaryLabel)),
+                      child: Text(
+                        ctrl.classes.isEmpty ? '请先添加班级与学生' : '暂无学生',
+                        style: TextStyle(color: AppTheme.tertiaryLabel),
+                      ),
                     )
                   : ListView(
                       padding: const EdgeInsets.only(bottom: 24),
@@ -153,6 +227,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                         letterSpacing: -0.41,
                                       ),
                                     ),
+                                    if (student.studentNo.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          '学号 ${student.studentNo}',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: AppTheme.tertiaryLabel,
+                                          ),
+                                        ),
+                                      ),
                                     const SizedBox(height: 8),
                                     Wrap(
                                       spacing: 6,
