@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
@@ -23,7 +24,7 @@ class SalaryScreen extends StatelessWidget {
         title: const Text('每月工资'),
         actions: [
           IconButton(
-            tooltip: 'Excel',
+            tooltip: '导入导出',
             onPressed: () => showExcelImportActions(
               context: context,
               title: '工资',
@@ -32,7 +33,7 @@ class SalaryScreen extends StatelessWidget {
               importBytes: (bytes, _) =>
                   context.read<ClassController>().importSalaryFromBytes(bytes),
             ),
-            icon: const Icon(Icons.table_chart_outlined),
+            icon: const Icon(AppIcons.moreVert),
           ),
           IconButton(
             tooltip: '记一笔',

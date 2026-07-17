@@ -194,22 +194,26 @@ class ClassRepository {
 
   Future<ManagedClass> createClass({
     required String name,
+    String school = '',
     String grade = '',
     String groupName = '',
     int seatRows = 6,
     int seatCols = 8,
     TeacherRole teacherRole = TeacherRole.homeroom,
+    String subject = '',
     Map<String, bool> featureFlags = const {},
   }) async {
     final list = await getClasses();
     final cls = ManagedClass(
       id: _uuid.v4(),
       name: name.trim(),
+      school: school.trim(),
       grade: grade.trim(),
       groupName: groupName.trim(),
       seatRows: seatRows,
       seatCols: seatCols,
       teacherRole: teacherRole,
+      subject: subject.trim(),
       featureFlags: featureFlags,
       sortOrder: list.length,
       createdAt: DateTime.now(),
@@ -1950,57 +1954,276 @@ class ClassRepository {
   }
 
   Future<void> seedDemoStudents() async {
-    final names = [
-      ('张明', '01', '男', '一组'),
-      ('李华', '02', '女', '一组'),
-      ('王芳', '03', '女', '一组'),
-      ('赵强', '04', '男', '二组'),
-      ('陈静', '05', '女', '二组'),
-      ('刘洋', '06', '男', '二组'),
-      ('杨柳', '07', '女', '三组'),
-      ('黄磊', '08', '男', '三组'),
-      ('周倩', '09', '女', '三组'),
-      ('吴昊', '10', '男', '四组'),
-      ('徐婷', '11', '女', '四组'),
-      ('孙杰', '12', '男', '四组'),
-    ];
-    var index = 0;
-    for (final (name, no, gender, group) in names) {
-      final row = index ~/ 8;
-      final col = index % 8;
-      await upsertStudent(
-        Student(
+    await seedDemoData();
+  }
+
+  /// 为空的模块填充演示数据，便于试用（已有数据不覆盖）
+  Future<void> seedDemoData() async {
+    String ymd(DateTime t) =>
+        '${t.year.toString().padLeft(4, '0')}-'
+        '${t.month.toString().padLeft(2, '0')}-'
+        '${t.day.toString().padLeft(2, '0')}';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    var students = await getStudents();
+    if (students.isEmpty) {
+      final names = [
+        ('张明', '01', '男', '一组'),
+        ('李华', '02', '女', '一组'),
+        ('王芳', '03', '女', '一组'),
+        ('赵强', '04', '男', '二组'),
+        ('陈静', '05', '女', '二组'),
+        ('刘洋', '06', '男', '二组'),
+        ('杨柳', '07', '女', '三组'),
+        ('黄磊', '08', '男', '三组'),
+        ('周倩', '09', '女', '三组'),
+        ('吴昊', '10', '男', '四组'),
+        ('徐婷', '11', '女', '四组'),
+        ('孙杰', '12', '男', '四组'),
+      ];
+      var index = 0;
+      for (final (name, no, gender, group) in names) {
+        final row = index ~/ 8;
+        final col = index % 8;
+        await upsertStudent(
+          Student(
+            id: _uuid.v4(),
+            name: name,
+            studentNo: no,
+            gender: gender,
+            phone: '1380000${no.padLeft(4, '0')}',
+            note: '',
+            groupName: group,
+            role: index == 0
+                ? '班长'
+                : (index == 1
+                    ? '学习委员'
+                    : (index == 3 ? '组长' : '')),
+            birthday:
+                '${((index % 12) + 1).toString().padLeft(2, '0')}-${((index % 28) + 1).toString().padLeft(2, '0')}',
+            points: 80 + (index * 3) % 20,
+            seatRow: row,
+            seatCol: col,
+            createdAt: now,
+          ),
+        );
+        index++;
+      }
+      students = await getStudents();
+    }
+
+    if ((await getRewards()).isEmpty) {
+      for (final (name, cost, stock) in [
+        ('铅笔', 5, 50),
+        ('本子', 10, 30),
+        ('免作业券', 30, 10),
+        ('小奖状', 50, 5),
+      ]) {
+        await upsertReward(
+          RewardItem(id: _uuid.v4(), name: name, cost: cost, stock: stock),
+        );
+      }
+    }
+
+    if ((await getCountdowns()).isEmpty) {
+      for (final (title, days) in [
+        ('期中考试', 12),
+        ('家长会', 5),
+        ('国庆放假', 20),
+        ('运动会', 28),
+        ('期末考试', 55),
+        ('上学期开学', -10),
+      ]) {
+        await upsertCountdown(
+          CountdownItem(
+            id: _uuid.v4(),
+            title: title,
+            targetDate: ymd(today.add(Duration(days: days))),
+            createdAt: now,
+          ),
+        );
+      }
+    }
+
+    if ((await getFundRecords()).isEmpty) {
+      for (final (title, amount, daysAgo, note) in [
+        ('班费收取', 500, 20, '每生 50 元 × 10'),
+        ('购买扫把拖把', -68, 15, '超市采购'),
+        ('班级活动零食', -120, 7, '主题班会'),
+        ('废品回收', 35, 3, '废纸箱'),
+      ]) {
+        await upsertFundRecord(
+          FundRecord(
+            id: _uuid.v4(),
+            title: title,
+            amount: amount,
+            date: ymd(today.subtract(Duration(days: daysAgo))),
+            note: note,
+            createdAt: now,
+          ),
+        );
+      }
+    }
+
+    if ((await getWorkLogs()).isEmpty) {
+      final sid = students.isNotEmpty ? students.first.id : '';
+      final samples = <(WorkLogCategory, String, String, int)>[
+        (
+          WorkLogCategory.classMeeting,
+          '诚信考试主题班会',
+          '组织观看案例视频，小组讨论并签订诚信承诺。',
+          2
+        ),
+        (
+          WorkLogCategory.safetyEdu,
+          '防溺水安全教育',
+          '强调假期水域安全，发放致家长一封信。',
+          5
+        ),
+        (
+          WorkLogCategory.studentTalk,
+          '与班长谈值日落实',
+          '沟通值日检查表执行情况，约定本周复查。',
+          1
+        ),
+        (
+          WorkLogCategory.parentComm,
+          '电话沟通作业习惯',
+          '与家长沟通晚间作业安排，家长表示配合督促。',
+          3
+        ),
+      ];
+      for (final (cat, title, content, daysAgo) in samples) {
+        await upsertWorkLog(
+          WorkLog(
+            id: _uuid.v4(),
+            category: cat,
+            title: title,
+            content: content,
+            date: ymd(today.subtract(Duration(days: daysAgo))),
+            studentIds: cat == WorkLogCategory.studentTalk ? sid : '',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+    }
+
+    if ((await getNotes()).isEmpty) {
+      await upsertNote(
+        ClassNote(
           id: _uuid.v4(),
-          name: name,
-          studentNo: no,
-          gender: gender,
-          phone: '1380000${no.padLeft(4, '0')}',
-          note: '',
-          groupName: group,
-          role: index == 0
-              ? '班长'
-              : (index == 1
-                  ? '学习委员'
-                  : (index == 3 ? '组长' : '')),
-          birthday:
-              '${((index % 12) + 1).toString().padLeft(2, '0')}-${((index % 28) + 1).toString().padLeft(2, '0')}',
-          points: 80 + (index * 3) % 20,
-          seatRow: row,
-          seatCol: col,
-          createdAt: DateTime.now(),
+          title: '本周关注',
+          content: '① 周三教研；② 周五校服检查；③ 学困生作业面批。',
+          createdAt: now,
         ),
       );
-      index++;
+      await upsertNote(
+        ClassNote(
+          id: _uuid.v4(),
+          title: '家长会要点草稿',
+          content: '学情概述、下阶段目标、家校配合事项。',
+          createdAt: now.subtract(const Duration(days: 1)),
+        ),
+      );
     }
-    final rewards = [
-      ('铅笔', 5, 50),
-      ('本子', 10, 30),
-      ('免作业券', 30, 10),
-      ('小奖状', 50, 5),
-    ];
-    for (final (name, cost, stock) in rewards) {
-      await upsertReward(
-        RewardItem(id: _uuid.v4(), name: name, cost: cost, stock: stock),
+
+    final todayStr = ymd(today);
+    final hw = await getHomework(date: todayStr);
+    if (hw.isEmpty) {
+      await upsertHomework(
+        HomeworkItem(
+          id: _uuid.v4(),
+          title: '语文：背诵第 3 课生字',
+          date: todayStr,
+        ),
+      );
+      await upsertHomework(
+        HomeworkItem(
+          id: _uuid.v4(),
+          title: '数学：练习册 P12–13',
+          date: todayStr,
+        ),
+      );
+    }
+
+    if ((await getTimetable()).isEmpty) {
+      const subjects = [
+        '语文',
+        '数学',
+        '英语',
+        '物理',
+        '化学',
+        '体育',
+        '班会',
+      ];
+      var i = 0;
+      for (var weekday = 1; weekday <= 5; weekday++) {
+        for (var period = 1; period <= 4; period++) {
+          await upsertTimetableSlot(
+            TimetableSlot(
+              id: _uuid.v4(),
+              weekday: weekday,
+              period: period,
+              subject: subjects[i % subjects.length],
+            ),
+          );
+          i++;
+        }
+      }
+    }
+
+    if ((await getExams()).isEmpty) {
+      final examId = _uuid.v4();
+      await upsertExam(
+        Exam(
+          id: examId,
+          title: '三月月考',
+          category: '月考',
+          examDate: ymd(today.subtract(const Duration(days: 8))),
+          subjects: const ['语文', '数学', '英语'],
+          fullScore: 100,
+          passScore: 60,
+          note: '演示考试，可导入成绩或手动录入',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      // 给前几名学生写一点分数
+      for (var i = 0; i < students.length && i < 8; i++) {
+        final s = students[i];
+        await upsertExamScore(
+          ExamScore(
+            id: _uuid.v4(),
+            examId: examId,
+            studentId: s.id,
+            scores: {
+              '语文': 72.0 + i * 2,
+              '数学': 68.0 + i * 3,
+              '英语': 75.0 + i,
+            },
+          ),
+        );
+      }
+    }
+
+    if ((await getSalaryRecords()).isEmpty) {
+      final ym =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}';
+      await upsertSalaryRecord(
+        SalaryRecord(
+          id: _uuid.v4(),
+          yearMonth: ym,
+          title: '基本工资',
+          baseAmount: 6800,
+          allowance: 800,
+          deduction: 200,
+          netAmount: 7400,
+          paidAt: ymd(today.subtract(const Duration(days: 2))),
+          note: '演示数据',
+          createdAt: now,
+        ),
       );
     }
   }

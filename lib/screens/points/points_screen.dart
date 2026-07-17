@@ -67,7 +67,7 @@ class _PointsScreenState extends State<PointsScreen> {
                       importBytes: (bytes, _) =>
                           context.read<ClassController>().importPointsFromBytes(bytes),
                     ),
-                    icon: const Icon(Icons.table_chart_outlined),
+                    icon: const Icon(AppIcons.moreVert),
                   ),
                   IconButton(
                     tooltip: '积分规则',

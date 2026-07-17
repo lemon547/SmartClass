@@ -1,24 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:smart_class/data/class_repository.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/classes/class_features_screen.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 
-/// 多班级管理：按分组标签展示，支持切换 / 新增 / 编辑 / 删除
+/// 多班级管理：按学校归类，支持切换 / 新增 / 编辑 / 删除
 class ClassesScreen extends StatelessWidget {
   const ClassesScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
-    final grouped = <String, List<ManagedClass>>{};
+    final bySchool = <String, List<ManagedClass>>{};
     for (final c in ctrl.classes) {
-      final key = c.groupName.trim().isEmpty ? '未分组' : c.groupName.trim();
-      grouped.putIfAbsent(key, () => []).add(c);
+      bySchool.putIfAbsent(c.schoolLabel, () => []).add(c);
     }
-    final keys = grouped.keys.toList()..sort();
+    final schools = bySchool.keys.toList()
+      ..sort((a, b) {
+        if (a == '未填写学校') return 1;
+        if (b == '未填写学校') return -1;
+        return a.compareTo(b);
+      });
 
     return Scaffold(
       appBar: AppBar(
@@ -34,24 +39,31 @@ class ClassesScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 28),
         children: [
-          for (final key in keys) ...[
+          for (final school in schools) ...[
             GroupedSection(
-              header: key,
+              header: school,
+              footer: '${bySchool[school]!.length} 个班级',
               children: [
-                for (final c in grouped[key]!)
+                for (final c in bySchool[school]!)
                   GroupedTile(
                     title: c.displayTitle,
-                    subtitle:
-                        '${c.roleLabel}${c.id == ctrl.currentClass?.id ? ' · 当前' : ''}',
+                    subtitle: [
+                      c.roleLabel,
+                      if (c.groupName.trim().isNotEmpty) c.groupName.trim(),
+                      if (c.id == ctrl.currentClass?.id) '当前',
+                    ].join(' · '),
                     trailing: c.id == ctrl.currentClass?.id
-                        ? Icon(Icons.check_circle, color: AppTheme.blue, size: 22)
+                        ? Icon(Icons.check_circle,
+                            color: AppTheme.blue, size: 22)
                         : null,
                     onTap: () async {
                       if (c.id != ctrl.currentClass?.id) {
                         await ctrl.switchClass(c.id);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('已切换到 ${c.displayTitle}')),
+                            SnackBar(
+                              content: Text('已切换到 ${c.displayTitle}'),
+                            ),
                           );
                         }
                       }
@@ -115,8 +127,10 @@ class ClassesScreen extends StatelessWidget {
             ),
             if (ctrl.classes.length > 1)
               ListTile(
-                leading: Icon(Icons.delete_outline, color: AppTheme.destructive),
-                title: Text('删除', style: TextStyle(color: AppTheme.destructive)),
+                leading:
+                    Icon(Icons.delete_outline, color: AppTheme.destructive),
+                title:
+                    Text('删除', style: TextStyle(color: AppTheme.destructive)),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final ok = await showDialog<bool>(
@@ -149,132 +163,384 @@ class ClassesScreen extends StatelessWidget {
 
   Future<void> _editClass(BuildContext context, {ManagedClass? existing}) async {
     final ctrl = context.read<ClassController>();
-    final name = TextEditingController(text: existing?.name ?? '');
-    final grade = TextEditingController(text: existing?.grade ?? '');
-    final group = TextEditingController(text: existing?.groupName ?? '');
-    var role = existing?.teacherRole ?? TeacherRole.homeroom;
-    final rows = TextEditingController(
-      text: '${existing?.seatRows ?? ctrl.profile.seatRows}',
-    );
-    final cols = TextEditingController(
-      text: '${existing?.seatCols ?? ctrl.profile.seatCols}',
-    );
-
-    final saved = await showModalBottomSheet<bool>(
+    final result = await showModalBottomSheet<_ClassEditResult>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 8,
-                bottom: MediaQuery.viewInsetsOf(ctx).bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    existing == null ? '添加班级' : '编辑班级',
-                    style: Theme.of(ctx).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: name,
-                    decoration: const InputDecoration(labelText: '班级名称'),
-                    textInputAction: TextInputAction.next,
-                  ),
-                  TextField(
-                    controller: grade,
-                    decoration: const InputDecoration(labelText: '年级'),
-                  ),
-                  TextField(
-                    controller: group,
-                    decoration: const InputDecoration(
-                      labelText: '分组标签',
-                      hintText: '如：高一、任教',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('我的角色', style: TextStyle(color: AppTheme.secondaryLabel)),
-                  const SizedBox(height: 6),
-                  SegmentedButton<TeacherRole>(
-                    segments: const [
-                      ButtonSegment(
-                        value: TeacherRole.homeroom,
-                        label: Text('班主任'),
-                      ),
-                      ButtonSegment(
-                        value: TeacherRole.subject,
-                        label: Text('科任'),
-                      ),
-                    ],
-                    selected: {role},
-                    onSelectionChanged: (s) => setLocal(() => role = s.first),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: rows,
-                          decoration: const InputDecoration(labelText: '座位行'),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          controller: cols,
-                          decoration: const InputDecoration(labelText: '座位列'),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () {
-                      if (name.text.trim().isEmpty) return;
-                      Navigator.pop(ctx, true);
-                    },
-                    child: Text(existing == null ? '创建' : '保存'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      builder: (ctx) => _ClassEditSheet(
+        existing: existing,
+        defaultRows: existing?.seatRows ?? ctrl.profile.seatRows,
+        defaultCols: existing?.seatCols ?? ctrl.profile.seatCols,
+        knownSchools: [
+          for (final c in ctrl.classes)
+            if (c.school.trim().isNotEmpty) c.school.trim(),
+        ]..sort(),
+      ),
     );
+    if (result == null || !context.mounted) return;
 
-    if (saved != true) return;
-    final seatRows = int.tryParse(rows.text) ?? 6;
-    final seatCols = int.tryParse(cols.text) ?? 8;
     if (existing == null) {
       await ctrl.createManagedClass(
-        name: name.text,
-        grade: grade.text,
-        groupName: group.text,
-        teacherRole: role,
-        seatRows: seatRows.clamp(1, 20),
-        seatCols: seatCols.clamp(1, 20),
+        name: result.name,
+        school: result.school,
+        grade: result.grade,
+        groupName: result.groupName,
+        teacherRole: result.role,
+        subject: result.subject,
+        seatRows: result.seatRows,
+        seatCols: result.seatCols,
       );
     } else {
       await ctrl.updateManagedClass(
         existing.copyWith(
-          name: name.text.trim(),
-          grade: grade.text.trim(),
-          groupName: group.text.trim(),
-          teacherRole: role,
-          seatRows: seatRows.clamp(1, 20),
-          seatCols: seatCols.clamp(1, 20),
+          name: result.name,
+          school: result.school,
+          grade: result.grade,
+          groupName: result.groupName,
+          teacherRole: result.role,
+          subject: result.subject,
+          seatRows: result.seatRows,
+          seatCols: result.seatCols,
         ),
       );
     }
+  }
+}
+
+class _ClassEditResult {
+  const _ClassEditResult({
+    required this.school,
+    required this.name,
+    required this.grade,
+    required this.groupName,
+    required this.role,
+    required this.subject,
+    required this.seatRows,
+    required this.seatCols,
+  });
+
+  final String school;
+  final String name;
+  final String grade;
+  final String groupName;
+  final TeacherRole role;
+  final String subject;
+  final int seatRows;
+  final int seatCols;
+}
+
+class _ClassEditSheet extends StatefulWidget {
+  const _ClassEditSheet({
+    required this.existing,
+    required this.defaultRows,
+    required this.defaultCols,
+    required this.knownSchools,
+  });
+
+  final ManagedClass? existing;
+  final int defaultRows;
+  final int defaultCols;
+  final List<String> knownSchools;
+
+  @override
+  State<_ClassEditSheet> createState() => _ClassEditSheetState();
+}
+
+class _ClassEditSheetState extends State<_ClassEditSheet> {
+  late final TextEditingController _school;
+  late final TextEditingController _name;
+  late final TextEditingController _grade;
+  late final TextEditingController _group;
+  late final TextEditingController _subject;
+  late final TextEditingController _rows;
+  late final TextEditingController _cols;
+  late TeacherRole _role;
+  late String _subjectValue;
+
+  static const _presets = ClassRepository.defaultExamSubjects;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _school = TextEditingController(text: e?.school ?? '');
+    _name = TextEditingController(text: e?.name ?? '');
+    _grade = TextEditingController(text: e?.grade ?? '');
+    _group = TextEditingController(text: e?.groupName ?? '');
+    _subject = TextEditingController(text: e?.subject ?? '');
+    _subjectValue = e?.subject.trim() ?? '';
+    _role = e?.teacherRole ?? TeacherRole.homeroom;
+    _rows = TextEditingController(text: '${widget.defaultRows}');
+    _cols = TextEditingController(text: '${widget.defaultCols}');
+  }
+
+  @override
+  void dispose() {
+    _school.dispose();
+    _name.dispose();
+    _grade.dispose();
+    _group.dispose();
+    _subject.dispose();
+    _rows.dispose();
+    _cols.dispose();
+    super.dispose();
+  }
+
+  void _pickSubject(String s) {
+    setState(() {
+      _subjectValue = s;
+      _subject.text = s;
+    });
+  }
+
+  void _submit() {
+    final name = _name.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请填写班级名称')),
+      );
+      return;
+    }
+    final subject = _subject.text.trim().isNotEmpty
+        ? _subject.text.trim()
+        : _subjectValue.trim();
+    if (_role == TeacherRole.subject && subject.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('科任请选择或填写任教科目')),
+      );
+      return;
+    }
+    Navigator.pop(
+      context,
+      _ClassEditResult(
+        school: _school.text.trim(),
+        name: name,
+        grade: _grade.text.trim(),
+        groupName: _group.text.trim(),
+        role: _role,
+        subject: subject,
+        seatRows: (int.tryParse(_rows.text) ?? 6).clamp(1, 20),
+        seatCols: (int.tryParse(_cols.text) ?? 8).clamp(1, 20),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxH = MediaQuery.sizeOf(context).height * 0.9;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final schools = widget.knownSchools.toSet().toList()..sort();
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.existing == null ? '添加班级' : '编辑班级',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '先选学校，再填班级与任教身份',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.secondaryLabel,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                  children: [
+                    TextField(
+                      controller: _school,
+                      decoration: const InputDecoration(
+                        labelText: '学校',
+                        hintText: '如：XX 中学',
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    if (schools.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final s in schools)
+                            ActionChip(
+                              label: Text(s),
+                              onPressed: () =>
+                                  setState(() => _school.text = s),
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _name,
+                      decoration: const InputDecoration(
+                        labelText: '班级名称',
+                        hintText: '如：高一（1）班',
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _grade,
+                      decoration: const InputDecoration(
+                        labelText: '年级',
+                        hintText: '如：高一',
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: _group,
+                      decoration: const InputDecoration(
+                        labelText: '分组标签（可选）',
+                        hintText: '如：高一、任教',
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      '我的角色',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.label,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<TeacherRole>(
+                      segments: const [
+                        ButtonSegment(
+                          value: TeacherRole.homeroom,
+                          label: Text('班主任'),
+                        ),
+                        ButtonSegment(
+                          value: TeacherRole.subject,
+                          label: Text('科任老师'),
+                        ),
+                      ],
+                      selected: {_role},
+                      onSelectionChanged: (s) =>
+                          setState(() => _role = s.first),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      '任教科目',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.label,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _role == TeacherRole.subject
+                          ? '选择后显示为「语文老师」「数学老师」等'
+                          : '可选；兼教某科时填写',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.tertiaryLabel,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final s in _presets)
+                          FilterChip(
+                            label: Text(s),
+                            selected: _subjectValue == s,
+                            onSelected: (_) => _pickSubject(s),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _subject,
+                      decoration: const InputDecoration(
+                        labelText: '或自行填写科目',
+                        hintText: '如：信息技术、体育',
+                      ),
+                      onChanged: (v) =>
+                          setState(() => _subjectValue = v.trim()),
+                    ),
+                    if (_subjectValue.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        '预览：${ManagedClass(
+                          id: '_',
+                          name: 'x',
+                          teacherRole: _role,
+                          subject: _subjectValue,
+                          createdAt: DateTime(2000),
+                        ).roleLabel}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.blue,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 28),
+                    Text(
+                      '座位表尺寸',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.label,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _rows,
+                            decoration:
+                                const InputDecoration(labelText: '行数'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextField(
+                            controller: _cols,
+                            decoration:
+                                const InputDecoration(labelText: '列数'),
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                child: FilledButton(
+                  onPressed: _submit,
+                  child: Text(widget.existing == null ? '创建' : '保存'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

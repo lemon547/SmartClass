@@ -66,9 +66,9 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
             icon: const Icon(Icons.upload_file_outlined),
           ),
           IconButton(
-            tooltip: '导入 / 模板',
+            tooltip: '导入成绩',
             onPressed: () => _showExcelActions(context, exam),
-            icon: const Icon(AppIcons.listPlus),
+            icon: const Icon(AppIcons.fileSheet),
           ),
           IconButton(
             tooltip: '删除',

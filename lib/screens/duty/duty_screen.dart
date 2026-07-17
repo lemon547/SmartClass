@@ -1,4 +1,4 @@
-﻿import 'package:smart_class/theme/app_icons.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'package:provider/provider.dart';
@@ -21,7 +21,7 @@ class DutyScreen extends StatelessWidget {
         title: const Text('值日安排'),
         actions: [
           IconButton(
-            tooltip: 'Excel',
+            tooltip: '导入导出',
             onPressed: () => showExcelImportActions(
               context: context,
               title: '值日',
@@ -30,7 +30,7 @@ class DutyScreen extends StatelessWidget {
               importBytes: (bytes, _) =>
                   context.read<ClassController>().importDutyFromBytes(bytes),
             ),
-            icon: const Icon(Icons.table_chart_outlined),
+            icon: const Icon(AppIcons.moreVert),
           ),
           TextButton(
             onPressed: ctrl.dutyList.isEmpty

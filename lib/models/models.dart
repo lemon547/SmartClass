@@ -332,12 +332,16 @@ extension TeacherRoleX on TeacherRole {
 class ManagedClass {
   final String id;
   final String name;
+  /// 所属学校，档案按学校归类
+  final String school;
   final String grade;
-  /// 列表分组标签，如「高一」「任教」
+  /// 列表次级分组，如「高一」「任教」
   final String groupName;
   final int seatRows;
   final int seatCols;
   final TeacherRole teacherRole;
+  /// 任教科目，如「语文」「数学」（科任必填体验）
+  final String subject;
   /// 用户覆盖的功能显隐；未出现的键走角色默认
   final Map<String, bool> featureFlags;
   final int sortOrder;
@@ -346,11 +350,13 @@ class ManagedClass {
   const ManagedClass({
     required this.id,
     required this.name,
+    this.school = '',
     this.grade = '',
     this.groupName = '',
     this.seatRows = 6,
     this.seatCols = 8,
     this.teacherRole = TeacherRole.homeroom,
+    this.subject = '',
     this.featureFlags = const {},
     this.sortOrder = 0,
     required this.createdAt,
@@ -365,16 +371,30 @@ class ManagedClass {
 
   String get displayTitle => asProfile.displayTitle;
 
-  String get roleLabel => teacherRole.label;
+  String get schoolLabel {
+    final s = school.trim();
+    return s.isEmpty ? '未填写学校' : s;
+  }
+
+  /// 如「语文老师」「班主任 · 数学」
+  String get roleLabel {
+    final s = subject.trim();
+    if (teacherRole == TeacherRole.subject) {
+      return s.isEmpty ? '科任' : '$s老师';
+    }
+    return s.isEmpty ? '班主任' : '班主任 · $s';
+  }
 
   ManagedClass copyWith({
     String? id,
     String? name,
+    String? school,
     String? grade,
     String? groupName,
     int? seatRows,
     int? seatCols,
     TeacherRole? teacherRole,
+    String? subject,
     Map<String, bool>? featureFlags,
     int? sortOrder,
     DateTime? createdAt,
@@ -382,11 +402,13 @@ class ManagedClass {
     return ManagedClass(
       id: id ?? this.id,
       name: name ?? this.name,
+      school: school ?? this.school,
       grade: grade ?? this.grade,
       groupName: groupName ?? this.groupName,
       seatRows: seatRows ?? this.seatRows,
       seatCols: seatCols ?? this.seatCols,
       teacherRole: teacherRole ?? this.teacherRole,
+      subject: subject ?? this.subject,
       featureFlags: featureFlags ?? this.featureFlags,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
@@ -396,11 +418,13 @@ class ManagedClass {
   Map<String, Object?> toMap() => {
         'id': id,
         'name': name,
+        'school': school,
         'grade': grade,
         'group_name': groupName,
         'seat_rows': seatRows,
         'seat_cols': seatCols,
         'teacher_role': teacherRole.storage,
+        'subject': subject,
         'feature_flags':
             featureFlags.isEmpty ? null : jsonEncode(featureFlags),
         'sort_order': sortOrder,
@@ -423,11 +447,13 @@ class ManagedClass {
     return ManagedClass(
       id: map['id']! as String,
       name: map['name']! as String,
+      school: (map['school'] as String?) ?? '',
       grade: (map['grade'] as String?) ?? '',
       groupName: (map['group_name'] as String?) ?? '',
       seatRows: (map['seat_rows'] as int?) ?? 6,
       seatCols: (map['seat_cols'] as int?) ?? 8,
       teacherRole: TeacherRoleX.fromStorage(map['teacher_role'] as String?),
+      subject: (map['subject'] as String?) ?? '',
       featureFlags: flags,
       sortOrder: (map['sort_order'] as int?) ?? 0,
       createdAt: DateTime.parse(map['created_at']! as String),

@@ -326,15 +326,24 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            if (ctrl.students.isEmpty) ...[
+            if (ctrl.students.isEmpty ||
+                ctrl.countdowns.isEmpty ||
+                ctrl.fundRecords.isEmpty) ...[
               const SizedBox(height: 12),
               GroupedSection(
                 children: [
                   GroupedTile(
                     title: '填充演示数据',
-                    subtitle: '含小组与奖品示例，快速体验',
+                    subtitle: '倒数日、班费、学生、成绩等示例，方便试用',
                     leading: Icon(AppIcons.users, color: AppTheme.blue),
-                    onTap: () => ctrl.seedDemo(),
+                    onTap: () async {
+                      await ctrl.seedDemo();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已填充演示数据')),
+                        );
+                      }
+                    },
                   ),
                 ],
               ),
@@ -555,7 +564,12 @@ Future<void> _showClassSwitcher(BuildContext context) async {
             for (final c in ctrl.classes)
               ListTile(
                 title: Text(c.displayTitle),
-                subtitle: Text(c.roleLabel),
+                subtitle: Text(
+                  [
+                    if (c.school.trim().isNotEmpty) c.school.trim(),
+                    c.roleLabel,
+                  ].join(' · '),
+                ),
                 trailing: c.id == ctrl.currentClass?.id
                     ? Icon(Icons.check, color: AppTheme.blue)
                     : null,

@@ -19,7 +19,7 @@ class AppDatabase {
     final path = p.join(dir.path, 'smart_class.db');
     return openDatabase(
       path,
-      version: 11,
+      version: 13,
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
@@ -32,6 +32,8 @@ class AppDatabase {
         await _createV9(db);
         await _createV10(db);
         await _createV11(db);
+        await _createV12(db);
+        await _createV13(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
@@ -44,6 +46,8 @@ class AppDatabase {
         if (oldVersion < 9) await _createV9(db);
         if (oldVersion < 10) await _createV10(db);
         if (oldVersion < 11) await _createV11(db);
+        if (oldVersion < 12) await _createV12(db);
+        if (oldVersion < 13) await _createV13(db);
       },
     );
   }
@@ -367,5 +371,19 @@ class AppDatabase {
         created_at TEXT NOT NULL
       )
     ''');
+  }
+
+  /// 班级任教科目（语文 / 数学…）
+  Future<void> _createV12(Database db) async {
+    try {
+      await db.execute('ALTER TABLE classes ADD COLUMN subject TEXT');
+    } catch (_) {}
+  }
+
+  /// 班级所属学校（档案按学校检索）
+  Future<void> _createV13(Database db) async {
+    try {
+      await db.execute('ALTER TABLE classes ADD COLUMN school TEXT');
+    } catch (_) {}
   }
 }

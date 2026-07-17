@@ -1,4 +1,4 @@
-﻿import 'package:smart_class/theme/app_icons.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'package:intl/intl.dart';
@@ -41,16 +41,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  TextButton(
+                  IconButton(
+                    tooltip: '导入导出',
                     onPressed: () => showExcelImportActions(
                       context: context,
                       title: '考勤',
-                      downloadTemplate: () =>
-                          context.read<ClassController>().exportAttendanceTemplateFile(),
-                      importBytes: (bytes, _) =>
-                          context.read<ClassController>().importAttendanceFromBytes(bytes),
+                      downloadTemplate: () => context
+                          .read<ClassController>()
+                          .exportAttendanceTemplateFile(),
+                      importBytes: (bytes, _) => context
+                          .read<ClassController>()
+                          .importAttendanceFromBytes(bytes),
                     ),
-                    child: const Text('Excel'),
+                    icon: Icon(AppIcons.moreVert, color: AppTheme.blue),
                   ),
                   TextButton(
                     onPressed: () => ctrl.markAllPresent(),

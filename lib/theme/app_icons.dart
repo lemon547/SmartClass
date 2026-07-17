@@ -1,14 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-/// 统一使用 Lucide 图标（https://lucide.dev/icons/）
+/// 统一图标：优先选手机端常见语义（更多、下载、导入等）
 abstract final class AppIcons {
   static const IconData logo = LucideIcons.graduationCap;
   static const IconData home = LucideIcons.house;
   static const IconData students = LucideIcons.users;
   static const IconData points = LucideIcons.star;
   static const IconData attendance = LucideIcons.clipboardCheck;
-  static const IconData more = LucideIcons.layoutGrid;
+  /// 「我的」Tab：个人中心语义
+  static const IconData more = LucideIcons.circleUserRound;
 
   static const IconData plus = LucideIcons.plus;
   static const IconData minus = LucideIcons.minus;
@@ -17,7 +18,7 @@ abstract final class AppIcons {
   static const IconData search = LucideIcons.search;
   static const IconData close = LucideIcons.x;
   static const IconData chevronRight = LucideIcons.chevronRight;
-  static const IconData trash = LucideIcons.trash;
+  static const IconData trash = LucideIcons.trash2;
   static const IconData calendar = LucideIcons.calendar;
   static const IconData shuffle = LucideIcons.shuffle;
   static const IconData clock = LucideIcons.clock;
@@ -35,10 +36,20 @@ abstract final class AppIcons {
   static const IconData settings = LucideIcons.settings;
   static const IconData pencil = LucideIcons.pencil;
   static const IconData users = LucideIcons.usersRound;
-  static const IconData chart = LucideIcons.layoutDashboard;
+  static const IconData chart = LucideIcons.chartColumn;
   static const IconData undo = LucideIcons.undo2;
   static const IconData trophy = LucideIcons.trophy;
   static const IconData cake = LucideIcons.cake;
   static const IconData hourglass = LucideIcons.hourglass;
   static const IconData wallet = LucideIcons.wallet;
+
+  /// AppBar 右侧「更多」——手机标准竖三点
+  static const IconData moreVert = LucideIcons.ellipsisVertical;
+  static const IconData download = LucideIcons.download;
+  static const IconData upload = LucideIcons.upload;
+  static const IconData openFile = LucideIcons.externalLink;
+  static const IconData copy = LucideIcons.copy;
+  static const IconData share = LucideIcons.share2;
+  static const IconData edit = LucideIcons.squarePen;
+  static const IconData fileSheet = LucideIcons.sheet;
 }

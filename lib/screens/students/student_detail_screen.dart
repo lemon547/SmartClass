@@ -75,7 +75,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                 );
               }
             },
-            icon: const Icon(Icons.ios_share_outlined),
+            icon: const Icon(AppIcons.share),
           ),
           TextButton(
             onPressed: () => _edit(context, s),

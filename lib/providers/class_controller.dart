@@ -177,6 +177,16 @@ class ClassController extends ChangeNotifier {
       dutyList = await _repo.getDuty();
       homework = await _repo.getHomework(date: selectedDate);
       activeSemester = await _repo.ensureActiveSemester();
+
+      // 空库时自动补演示数据，方便试用
+      if (countdowns.isEmpty || students.isEmpty) {
+        await _repo.seedDemoData();
+        students = await _repo.getStudents();
+        countdowns = await _repo.getCountdowns();
+        timetable = await _repo.getTimetable();
+        homework = await _repo.getHomework(date: selectedDate);
+      }
+
       essentialReady = true;
       loading = false;
       notifyListeners();
@@ -212,18 +222,22 @@ class ClassController extends ChangeNotifier {
 
   Future<ManagedClass> createManagedClass({
     required String name,
+    String school = '',
     String grade = '',
     String groupName = '',
     TeacherRole teacherRole = TeacherRole.homeroom,
+    String subject = '',
     int seatRows = 6,
     int seatCols = 8,
     bool switchTo = true,
   }) async {
     final created = await _repo.createClass(
       name: name,
+      school: school,
       grade: grade,
       groupName: groupName,
       teacherRole: teacherRole,
+      subject: subject,
       seatRows: seatRows,
       seatCols: seatCols,
     );
@@ -395,8 +409,7 @@ class ClassController extends ChangeNotifier {
   }
 
   Future<void> seedDemo() async {
-    if (students.isNotEmpty) return;
-    await _repo.seedDemoStudents();
+    await _repo.seedDemoData();
     await load();
   }
 

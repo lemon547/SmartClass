@@ -25,7 +25,7 @@ class CountdownScreen extends StatelessWidget {
         title: const Text('倒数日'),
         actions: [
           IconButton(
-            tooltip: 'Excel',
+            tooltip: '导入导出',
             onPressed: () => showExcelImportActions(
               context: context,
               title: '倒数日',
@@ -34,7 +34,7 @@ class CountdownScreen extends StatelessWidget {
               importBytes: (bytes, _) =>
                   context.read<ClassController>().importCountdownFromBytes(bytes),
             ),
-            icon: const Icon(Icons.table_chart_outlined),
+            icon: const Icon(AppIcons.moreVert),
           ),
           IconButton(
             tooltip: '添加',
@@ -71,6 +71,18 @@ class CountdownScreen extends StatelessWidget {
                     onPressed: () => _edit(context),
                     icon: const Icon(AppIcons.plus, size: 18),
                     label: const Text('添加倒数日'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () async {
+                      await context.read<ClassController>().seedDemo();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已填充演示数据')),
+                        );
+                      }
+                    },
+                    child: const Text('一键填充示例数据'),
                   ),
                 ],
               ),

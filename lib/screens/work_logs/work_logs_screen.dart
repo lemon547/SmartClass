@@ -38,7 +38,7 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
         title: const Text('工作留痕'),
         actions: [
           IconButton(
-            tooltip: 'Excel',
+            tooltip: '导入导出',
             onPressed: () => showExcelImportActions(
               context: context,
               title: '工作留痕',
@@ -47,7 +47,7 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
               importBytes: (bytes, _) =>
                   context.read<ClassController>().importWorkLogFromBytes(bytes),
             ),
-            icon: const Icon(Icons.table_chart_outlined),
+            icon: const Icon(AppIcons.moreVert),
           ),
           IconButton(
             tooltip: '新建记录',

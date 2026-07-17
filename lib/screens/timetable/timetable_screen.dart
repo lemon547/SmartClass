@@ -40,7 +40,7 @@ class TimetableScreen extends StatelessWidget {
         title: const Text('课程表'),
         actions: [
           IconButton(
-            tooltip: 'Excel',
+            tooltip: '导入导出',
             onPressed: () => showExcelImportActions(
               context: context,
               title: '课程表',
@@ -49,7 +49,7 @@ class TimetableScreen extends StatelessWidget {
               importBytes: (bytes, _) =>
                   context.read<ClassController>().importTimetableFromBytes(bytes),
             ),
-            icon: const Icon(Icons.table_chart_outlined),
+            icon: const Icon(AppIcons.moreVert),
           ),
           if (filled > 0)
             Center(

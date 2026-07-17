@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
@@ -48,12 +49,13 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 children: [
                   IconButton(
                     onPressed: () => _showRosterActions(context),
-                    icon: Icon(AppIcons.listPlus, color: AppTheme.blue),
-                    tooltip: '导入档案',
+                    icon: Icon(AppIcons.moreVert, color: AppTheme.blue),
+                    tooltip: '导入导出',
                   ),
                   IconButton(
                     onPressed: () => _editStudent(context),
                     icon: Icon(AppIcons.plus, color: AppTheme.blue),
+                    tooltip: '添加学生',
                   ),
                 ],
               ),
@@ -156,38 +158,54 @@ class _StudentsScreenState extends State<StudentsScreen> {
   }
 
   Future<void> _showRosterActions(BuildContext context) async {
-    await showCupertinoModalPopup<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => CupertinoActionSheet(
-        title: const Text('学生档案'),
-        message: const Text('可用 WPS / Excel 编辑后导入'),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _downloadTemplate(context);
-            },
-            child: const Text('下载示例表格'),
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '学生档案',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: Icon(AppIcons.download, color: AppTheme.blue),
+                title: const Text('下载空白模板'),
+                subtitle: const Text('用手机 WPS / Excel 填写'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _downloadTemplate(context);
+                },
+              ),
+              ListTile(
+                leading: Icon(AppIcons.upload, color: AppTheme.blue),
+                title: const Text('从手机导入'),
+                subtitle: const Text('选择已填好的表格'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _importExcel(context);
+                },
+              ),
+              ListTile(
+                leading: Icon(AppIcons.clipboardList, color: AppTheme.blue),
+                title: const Text('粘贴名单'),
+                subtitle: const Text('一行一个姓名，快速添加'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _batchAdd(context);
+                },
+              ),
+            ],
           ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _importExcel(context);
-            },
-            child: const Text('导入 Excel'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _batchAdd(context);
-            },
-            child: const Text('粘贴名单'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
         ),
       ),
     );
@@ -197,21 +215,43 @@ class _StudentsScreenState extends State<StudentsScreen> {
     final ctrl = context.read<ClassController>();
     try {
       final path = await ctrl.exportStudentTemplateFile();
-      await Clipboard.setData(ClipboardData(text: path));
       if (!context.mounted) return;
-      await showCupertinoDialog<void>(
+      await showModalBottomSheet<void>(
         context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('示例表格已生成'),
-          content: Text(
-            '可用 WPS 或 Excel 打开编辑。\n\n$path\n\n路径已复制到剪贴板。',
-          ),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('好'),
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('模板已保存到本机'),
+                  subtitle: Text('可直接用表格软件打开填写'),
+                ),
+                ListTile(
+                  leading: Icon(AppIcons.openFile, color: AppTheme.blue),
+                  title: const Text('用表格软件打开'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await OpenFilex.open(path);
+                  },
+                ),
+                ListTile(
+                  leading: Icon(AppIcons.copy, color: AppTheme.blue),
+                  title: const Text('复制文件路径'),
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: path));
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('路径已复制')),
+                    );
+                  },
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     } catch (e) {

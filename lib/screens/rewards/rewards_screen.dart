@@ -1,4 +1,4 @@
-﻿import 'package:smart_class/theme/app_icons.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'package:provider/provider.dart';
@@ -20,7 +20,7 @@ class RewardsScreen extends StatelessWidget {
         title: const Text('积分兑换'),
         actions: [
           IconButton(
-            tooltip: 'Excel',
+            tooltip: '导入导出',
             onPressed: () => showExcelImportActions(
               context: context,
               title: '奖品',
@@ -29,7 +29,7 @@ class RewardsScreen extends StatelessWidget {
               importBytes: (bytes, _) =>
                   context.read<ClassController>().importRewardFromBytes(bytes),
             ),
-            icon: const Icon(Icons.table_chart_outlined),
+            icon: const Icon(AppIcons.moreVert),
           ),
           IconButton(
             onPressed: () => _editReward(context),
