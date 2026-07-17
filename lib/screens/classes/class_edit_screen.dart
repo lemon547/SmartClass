@@ -110,6 +110,12 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
       );
       return;
     }
+    if (_role == TeacherRole.homeroom && subject.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('班主任也请填写任教科目')),
+      );
+      return;
+    }
     Navigator.pop(
       context,
       ClassEditResult(
@@ -240,7 +246,7 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
           Text(
             _role == TeacherRole.subject
                 ? '选择后显示为「语文老师」「数学老师」等'
-                : '可选；兼教某科时填写',
+                : '班主任也担任授课，请填写任教科目',
             style: TextStyle(
               fontSize: 12,
               color: AppTheme.tertiaryLabel,

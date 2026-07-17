@@ -1,8 +1,8 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:smart_class/services/excel_batch_helper.dart';
+import 'package:smart_class/services/file_export.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
@@ -58,7 +58,6 @@ Future<void> showExcelImportActions({
                     onManualAdd();
                   },
                 ),
-              // 弱化区：下载模板只作为次要文字链接
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: TextButton.icon(
@@ -83,80 +82,20 @@ Future<void> showExcelImportActions({
   );
 }
 
-/// 生成模板并引导用本机 App 打开（适合手机，不只弹路径）
+/// 生成模板后由用户选择保存位置
 Future<void> downloadExcelTemplate(
   BuildContext context,
   Future<String> Function() downloadTemplate,
 ) async {
   try {
-    final path = await downloadTemplate();
-    if (!context.mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  title: const Text('模板已保存到本机'),
-                  subtitle: Text(
-                    path,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.tertiaryLabel,
-                    ),
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(AppIcons.openFile, color: AppTheme.blue),
-                  title: const Text('用表格软件打开'),
-                  subtitle: const Text('推荐 WPS、Excel'),
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final res = await OpenFilex.open(path);
-                    if (!context.mounted) return;
-                    if (res.type != ResultType.done) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            res.message.isNotEmpty
-                                ? res.message
-                                : '打不开文件，请用文件管理器查找',
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                ),
-                ListTile(
-                  leading: Icon(AppIcons.copy, color: AppTheme.blue),
-                  title: const Text('复制文件路径'),
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: path));
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('路径已复制')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final saved = await FileExport.saveGenerated(
+      downloadTemplate,
+      dialogTitle: '保存模板',
     );
+    if (!context.mounted) return;
+    FileExport.showSavedSnackBar(context, saved);
   } catch (e) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('生成失败：$e')),
-    );
+    FileExport.showErrorSnackBar(context, e);
   }
 }
 

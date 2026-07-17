@@ -3,8 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:open_filex/open_filex.dart';
+import 'package:smart_class/services/file_export.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
@@ -221,51 +220,14 @@ class _StudentsScreenState extends State<StudentsScreen> {
   Future<void> _downloadTemplate(BuildContext context) async {
     final ctrl = context.read<ClassController>();
     try {
-      final path = await ctrl.exportStudentTemplateFile();
-      if (!context.mounted) return;
-      await showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: true,
-        builder: (ctx) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const ListTile(
-                  title: Text('模板已保存到本机'),
-                  subtitle: Text('可直接用表格软件打开填写'),
-                ),
-                ListTile(
-                  leading: Icon(AppIcons.openFile, color: AppTheme.blue),
-                  title: const Text('用表格软件打开'),
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    await OpenFilex.open(path);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(AppIcons.copy, color: AppTheme.blue),
-                  title: const Text('复制文件路径'),
-                  onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: path));
-                    if (!ctx.mounted) return;
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('路径已复制')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
+      final saved = await FileExport.saveGenerated(
+        () => ctrl.exportStudentTemplateFile(),
+        dialogTitle: '保存学生导入模板',
       );
+      if (!context.mounted) return;
+      FileExport.showSavedSnackBar(context, saved);
     } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('生成失败：$e')),
-      );
+      FileExport.showErrorSnackBar(context, e);
     }
   }
 

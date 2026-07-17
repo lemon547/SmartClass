@@ -67,29 +67,42 @@ class SeatingScreen extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Column(
-                  children: [
-                    for (var r = 0; r < rows; r++)
-                      Row(
-                        children: [
-                          for (var c = 0; c < cols; c++)
-                            _SeatCell(
-                              student: at(r, c),
-                              onTap: () => _assign(context, r, c),
-                              onLongPress: () {
-                                final s = at(r, c);
-                                if (s != null) ctrl.clearSeat(s.id);
-                              },
-                            ),
-                        ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Center(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (var r = 0; r < rows; r++)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (var c = 0; c < cols; c++)
+                                      _SeatCell(
+                                        student: at(r, c),
+                                        onTap: () => _assign(context, r, c),
+                                        onLongPress: () {
+                                          final s = at(r, c);
+                                          if (s != null) ctrl.clearSeat(s.id);
+                                        },
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
-                  ],
-                ),
-              ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],

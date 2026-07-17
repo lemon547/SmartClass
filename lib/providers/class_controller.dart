@@ -163,6 +163,45 @@ class ClassController extends ChangeNotifier {
   List<Student> studentsInGroup(String group) =>
       students.where((s) => s.groupName == group).toList();
 
+  List<Student> get ungroupedStudents =>
+      students.where((s) => s.groupName.trim().isEmpty).toList();
+
+  /// 创建或更新小组成员。返回错误文案，成功时返回 null。
+  Future<String?> saveGroupMembers({
+    String? previousName,
+    required String name,
+    required List<String> studentIds,
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '请填写小组名称';
+
+    final prev = previousName?.trim() ?? '';
+    if (prev != trimmed && groupNames.contains(trimmed)) {
+      return '小组名称已存在';
+    }
+
+    final selected = studentIds.toSet();
+    for (final s in students) {
+      final inPrev = prev.isNotEmpty && s.groupName == prev;
+      final shouldAssign = selected.contains(s.id);
+      if (inPrev && !shouldAssign) {
+        await _repo.upsertStudent(s.copyWith(groupName: ''));
+      } else if (shouldAssign) {
+        await _repo.upsertStudent(s.copyWith(groupName: trimmed));
+      }
+    }
+    await load();
+    return null;
+  }
+
+  Future<void> deleteGroup(String name) async {
+    final trimmed = name.trim();
+    for (final s in students.where((s) => s.groupName == trimmed)) {
+      await _repo.upsertStudent(s.copyWith(groupName: ''));
+    }
+    await load();
+  }
+
   List<Student> searchStudents(String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return students;

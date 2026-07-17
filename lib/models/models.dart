@@ -376,13 +376,21 @@ class ManagedClass {
     return s.isEmpty ? '未填写学校' : s;
   }
 
-  /// 如「语文老师」「班主任 · 数学」
+  /// 如「班主任 · 语文老师」「数学老师」
   String get roleLabel {
+    final tags = roleTags;
+    return tags.join(' · ');
+  }
+
+  /// 身份标签：班主任也是授课老师，两项分开展示
+  List<String> get roleTags {
     final s = subject.trim();
-    if (teacherRole == TeacherRole.subject) {
-      return s.isEmpty ? '科任' : '$s老师';
+    if (teacherRole == TeacherRole.homeroom) {
+      if (s.isEmpty) return const ['班主任'];
+      return ['班主任', '$s老师'];
     }
-    return s.isEmpty ? '班主任' : '班主任 · $s';
+    if (s.isEmpty) return const ['科任老师'];
+    return ['$s老师'];
   }
 
   ManagedClass copyWith({

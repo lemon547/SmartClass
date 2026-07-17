@@ -4,7 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:smart_class/services/file_export.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
@@ -326,27 +326,14 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
   Future<void> _downloadTemplate(BuildContext context, String examId) async {
     final ctrl = context.read<ClassController>();
     try {
-      final path = await ctrl.exportExamTemplateFile(examId);
-      await Clipboard.setData(ClipboardData(text: path));
-      if (!context.mounted) return;
-      await showCupertinoDialog<void>(
-        context: context,
-        builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('模板已生成'),
-          content: Text('可用 WPS 或 Excel 打开填写。\n\n$path\n\n路径已复制。'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('好'),
-            ),
-          ],
-        ),
+      final saved = await FileExport.saveGenerated(
+        () => ctrl.exportExamTemplateFile(examId),
+        dialogTitle: '保存成绩导入模板',
       );
+      if (!context.mounted) return;
+      FileExport.showSavedSnackBar(context, saved);
     } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('生成失败：$e')),
-      );
+      FileExport.showErrorSnackBar(context, e);
     }
   }
 

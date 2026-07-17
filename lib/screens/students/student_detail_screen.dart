@@ -1,11 +1,10 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/students/student_edit_screen.dart';
+import 'package:smart_class/services/file_share.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -23,6 +22,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
   List<AttendanceRecord> _att = [];
   List<PointRecord> _pts = [];
   bool _loading = true;
+  bool _sharing = false;
 
   @override
   void initState() {
@@ -58,25 +58,18 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
         title: Text(s.name),
         actions: [
           IconButton(
-            tooltip: '导出学期汇总',
-            onPressed: () async {
-              try {
-                final path = await context
-                    .read<ClassController>()
-                    .exportStudentSemesterReportFile(s.id);
-                await Clipboard.setData(ClipboardData(text: path));
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已导出（路径已复制）：\n$path')),
-                );
-              } catch (e) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('导出失败：$e')),
-                );
-              }
-            },
-            icon: const Icon(AppIcons.share),
+            tooltip: '分享学期汇总',
+            onPressed: _sharing ? null : () => _shareReport(context, s),
+            icon: _sharing
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppTheme.blue,
+                    ),
+                  )
+                : const Icon(AppIcons.share),
           ),
           TextButton(
             onPressed: () => _edit(context, s),
@@ -162,6 +155,29 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
               ],
             ),
     );
+  }
+
+  Future<void> _shareReport(BuildContext context, Student s) async {
+    setState(() => _sharing = true);
+    try {
+      final ctrl = context.read<ClassController>();
+      final path = await ctrl.exportStudentSemesterReportFile(s.id);
+      final classTitle =
+          ctrl.currentClass?.displayTitle ?? ctrl.profile.displayTitle;
+      await FileShare.shareXlsx(
+        filePath: path,
+        subject: '$classTitle · ${s.name} 学期汇总',
+        text: '${s.name} 本学期个人汇总',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分享失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   Future<void> _edit(BuildContext context, Student s) async {

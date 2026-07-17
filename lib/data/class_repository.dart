@@ -60,6 +60,7 @@ class ClassRepository {
     _prefs = await SharedPreferences.getInstance();
     await AppDatabase.instance.database;
     await ensureClassesMigrated();
+    await ensureClassTeachingProfile();
     await ensureActiveSemester();
   }
 
@@ -79,6 +80,7 @@ class ClassRepository {
         seatRows: _prefs.getInt('seat_rows') ?? 6,
         seatCols: _prefs.getInt('seat_cols') ?? 8,
         teacherRole: TeacherRole.homeroom,
+        subject: '语文',
         createdAt: DateTime.now(),
       );
       await db.insert(
@@ -191,6 +193,47 @@ class ClassRepository {
     if (cls.id == currentClassId) {
       _cachedCurrentClass = cls;
       await _syncLegacyPrefsFromClass(cls);
+    }
+    await _syncTeachingSubjectsForClass(cls);
+  }
+
+  /// 班主任也任教：补全科目并同步 teaching_subjects
+  Future<void> ensureClassTeachingProfile() async {
+    final list = await getClasses();
+    for (final cls in list) {
+      var next = cls;
+      if (cls.subject.trim().isEmpty) {
+        final fallback = cls.teacherRole == TeacherRole.homeroom ? '语文' : '';
+        if (fallback.isNotEmpty) {
+          next = cls.copyWith(subject: fallback);
+          await upsertClass(next);
+        }
+      } else {
+        await _syncTeachingSubjectsForClass(cls);
+      }
+    }
+  }
+
+  Future<void> _syncTeachingSubjectsForClass(ManagedClass cls) async {
+    final subject = cls.subject.trim();
+    if (subject.isEmpty) return;
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'teaching_subjects',
+      where: 'class_id = ?',
+      whereArgs: [cls.id],
+    );
+    final has = rows.any((r) => (r['subject'] as String?) == subject);
+    if (!has) {
+      await db.insert(
+        'teaching_subjects',
+        {
+          'class_id': cls.id,
+          'subject': subject,
+          'sort_order': rows.length,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
     }
   }
 
