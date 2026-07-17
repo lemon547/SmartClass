@@ -77,6 +77,9 @@ class ClassController extends ChangeNotifier {
   List<TimetablePeriod> timetablePeriods = TimetablePeriod.defaults();
   List<String> teachingSubjects = [];
   List<SalaryRecord> salaryRecords = [];
+  List<TeacherTodo> todos = [];
+  /// 跨班级的今日授课（今日页用）
+  List<TodayTeachingLesson> allTodayLessons = [];
   String selectedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
   bool loading = true;
   /// 首屏必需数据已就绪（可离开启动页）
@@ -238,17 +241,19 @@ class ClassController extends ChangeNotifier {
       homework = await _repo.getHomework(date: selectedDate);
       activeSemester = await _repo.ensureActiveSemester();
 
-      // 空库时自动补演示数据，方便试用
-      if (countdowns.isEmpty || students.isEmpty) {
-        await _repo.seedDemoData();
-        students = await _repo.getStudents();
-        countdowns = await _repo.getCountdowns();
-        timetable = await _repo.getTimetable();
+      // 各模块为空时自动补演示数据（已有数据不覆盖）
+      await _repo.seedDemoData();
+      students = await _repo.getStudents();
+      countdowns = await _repo.getCountdowns();
+      timetable = await _repo.getTimetable();
       await _repo.ensureTimetablePeriods();
       timetablePeriods = await _repo.getTimetablePeriods();
       teachingSubjects = await _repo.getTeachingSubjects();
-        homework = await _repo.getHomework(date: selectedDate);
-      }
+      dutyList = await _repo.getDuty();
+      homework = await _repo.getHomework(date: selectedDate);
+      selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
+      todos = await _repo.getTodos();
+      allTodayLessons = await _repo.collectTodayTeachingLessons();
 
       essentialReady = true;
       loading = false;
@@ -292,6 +297,7 @@ class ClassController extends ChangeNotifier {
     String subject = '',
     int seatRows = 6,
     int seatCols = 8,
+    Map<String, bool> featureFlags = const {},
     bool switchTo = true,
   }) async {
     final created = await _repo.createClass(
@@ -303,6 +309,7 @@ class ClassController extends ChangeNotifier {
       subject: subject,
       seatRows: seatRows,
       seatCols: seatCols,
+      featureFlags: featureFlags,
     );
     if (switchTo) {
       await switchClass(created.id);
@@ -638,10 +645,6 @@ class ClassController extends ChangeNotifier {
     return file.path;
   }
 
-  Future<String> exportAttendanceTemplateFile() =>
-      _writeExcelTemplate('考勤导入示例.xlsx', AttendanceBatchExcel.template());
-
-  /// 导出当前班级、当前日期的考勤表，并返回文件路径
   Future<String> exportAttendanceFile() async {
     final date = selectedDate;
     final classTitle = currentClass?.displayTitle ?? profile.displayTitle;
@@ -660,61 +663,6 @@ class ClassController extends ChangeNotifier {
     final fileName = '考勤_${classTitle}_$safeDate.xlsx'
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
     return _writeExcelTemplate(fileName, bytes);
-  }
-
-  Future<BatchImportResult> importAttendanceFromBytes(Uint8List bytes) async {
-    final parsed = AttendanceBatchExcel.parse(bytes);
-    var imported = 0;
-    var skipped = 0;
-    final warnings = [...parsed.warnings];
-    for (final row in parsed.rows) {
-      final s = _matchStudent(studentNo: row.studentNo, name: row.name);
-      if (s == null) {
-        skipped++;
-        warnings.add('未找到学生：${row.studentNo} ${row.name}');
-        continue;
-      }
-      await _repo.setAttendance(
-        studentId: s.id,
-        date: row.date,
-        status: row.status,
-        remark: row.remark,
-      );
-      imported++;
-    }
-    selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
-    notifyListeners();
-    return BatchImportResult(
-      imported: imported,
-      skipped: skipped,
-      warnings: warnings,
-    );
-  }
-
-  Future<String> exportTimetableTemplateFile() =>
-      _writeExcelTemplate('课程表导入示例.xlsx', TimetableBatchExcel.template());
-
-  Future<BatchImportResult> importTimetableFromBytes(Uint8List bytes) async {
-    final parsed = TimetableBatchExcel.parse(bytes);
-    var imported = 0;
-    for (final row in parsed.rows) {
-      if (row.subject.trim().isEmpty) {
-        await _repo.clearTimetableSlot(row.weekday, row.period);
-      } else {
-        await _repo.upsertTimetableSlot(
-          TimetableSlot(
-            id: _uuid.v4(),
-            weekday: row.weekday,
-            period: row.period,
-            subject: row.subject.trim(),
-          ),
-        );
-      }
-      imported++;
-    }
-    timetable = await _repo.getTimetable();
-    notifyListeners();
-    return BatchImportResult(imported: imported, warnings: parsed.warnings);
   }
 
   Future<String> exportDutyTemplateFile() =>
@@ -1845,25 +1793,29 @@ class ClassController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addTeachingSubject(String subject) async {
+  String? get teachingSubject =>
+      teachingSubjects.isEmpty ? null : teachingSubjects.first;
+
+  Future<void> setTeachingSubject(String subject) async {
     final t = subject.trim();
-    if (t.isEmpty || teachingSubjects.contains(t)) return;
-    await _repo.setTeachingSubjects([...teachingSubjects, t]);
+    if (t.isEmpty || t == teachingSubject) return;
+    await _repo.setTeachingSubjects([t]);
     teachingSubjects = await _repo.getTeachingSubjects();
     notifyListeners();
   }
 
-  Future<void> removeTeachingSubject(String subject) async {
-    final next = teachingSubjects.where((s) => s != subject).toList();
-    await _repo.setTeachingSubjects(next);
+  Future<void> clearTeachingSubject() async {
+    if (teachingSubject == null) return;
+    await _repo.setTeachingSubjects(const []);
     teachingSubjects = await _repo.getTeachingSubjects();
     notifyListeners();
   }
 
   bool isMyTeachingSubject(String? subject) {
     final s = subject?.trim() ?? '';
-    if (s.isEmpty) return false;
-    return teachingSubjects.contains(s);
+    final mine = teachingSubject;
+    if (s.isEmpty || mine == null) return false;
+    return s == mine;
   }
 
   TimetablePeriod? periodAt(int period) {
@@ -1880,16 +1832,74 @@ class ClassController extends ChangeNotifier {
     return null;
   }
 
-  /// 老师今日授课科目（按节次，仅显示本人授课）
-  List<String> get todayTeachingSubjects {
+  /// 老师今日授课（按节次，含时间与节次名）；优先跨班汇总
+  List<TodayTeachingLesson> get todayTeachingLessons {
+    if (allTodayLessons.isNotEmpty) return allTodayLessons;
     final w = DateTime.now().weekday;
     final slots = timetable.where((s) => s.weekday == w).toList()
       ..sort((a, b) => a.period.compareTo(b.period));
-    return [
-      for (final s in slots)
-        if (s.subject.trim().isNotEmpty && isMyTeachingSubject(s.subject))
-          s.subject.trim(),
-    ];
+    final title =
+        currentClass?.displayTitle ?? profile.displayTitle;
+    final out = <TodayTeachingLesson>[];
+    for (final s in slots) {
+      if (s.subject.trim().isEmpty || !isMyTeachingSubject(s.subject)) {
+        continue;
+      }
+      final p = periodAt(s.period);
+      out.add(
+        TodayTeachingLesson(
+          subject: s.subject.trim(),
+          periodLabel: p?.displayLabel ?? '第${s.period}节',
+          timeRange: p?.timeRange ?? '',
+          startTime: p?.startTime ?? '',
+          endTime: p?.endTime ?? '',
+          classTitle: title,
+        ),
+      );
+    }
+    return out;
+  }
+
+  Future<void> refreshTodos() async {
+    todos = await _repo.getTodos();
+    notifyListeners();
+  }
+
+  Future<void> addTodo(String title) async {
+    final t = title.trim();
+    if (t.isEmpty) return;
+    await _repo.upsertTodo(
+      TeacherTodo(
+        id: _uuid.v4(),
+        title: t,
+        sortOrder: todos.length,
+        createdAt: DateTime.now(),
+      ),
+    );
+    await refreshTodos();
+  }
+
+  Future<void> toggleTodo(String id) async {
+    TeacherTodo? found;
+    for (final t in todos) {
+      if (t.id == id) {
+        found = t;
+        break;
+      }
+    }
+    if (found == null) return;
+    await _repo.upsertTodo(found.copyWith(done: !found.done));
+    await refreshTodos();
+  }
+
+  Future<void> deleteTodo(String id) async {
+    await _repo.deleteTodo(id);
+    await refreshTodos();
+  }
+
+  Future<void> refreshAllTodayLessons() async {
+    allTodayLessons = await _repo.collectTodayTeachingLessons();
+    notifyListeners();
   }
 
   Future<Map<String, int>> weekStats() async {

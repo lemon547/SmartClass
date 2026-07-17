@@ -99,13 +99,6 @@ class _StudentsScreenState extends State<StudentsScreen> {
                                   title: s.name,
                                   subtitle: _subtitle(s),
                                   leading: StudentAvatar(name: s.name),
-                                  trailing: Text(
-                                    '${s.points}',
-                                    style: TextStyle(
-                                      fontSize: 17,
-                                      color: AppTheme.tertiaryLabel,
-                                    ),
-                                  ),
                                   onTap: () => Navigator.of(context).push(
                                     MaterialPageRoute(
                                       builder: (_) =>

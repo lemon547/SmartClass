@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/timetable/timetable_periods_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -34,38 +35,10 @@ class TimetableScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
     final today = DateTime.now().weekday;
     final periods = ctrl.timetablePeriods;
-    final filled =
-        ctrl.timetable.where((s) => s.subject.trim().isNotEmpty).length;
 
     return Scaffold(
       appBar: PageAppBar(
         title: const Text('班级课表'),
-        actions: [
-          IconButton(
-            tooltip: '添加一节',
-            onPressed: () => ctrl.addTimetablePeriod(),
-            icon: const Icon(AppIcons.plus),
-          ),
-          if (periods.length > 1)
-            IconButton(
-              tooltip: '删除最后一节',
-              onPressed: () => _deleteLastPeriod(context, ctrl),
-              icon: Icon(AppIcons.trash, color: AppTheme.destructive),
-            ),
-          if (filled > 0)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Text(
-                  '$filled 节',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.tertiaryLabel,
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -73,16 +46,27 @@ class TimetableScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
-              '星期固定；点左侧可改节次名与时间；蓝框为本人授课',
+              '蓝框为本人授课；节次名称与时间请在「节次与作息」中设置',
               style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: _PeriodSettingsBar(
+              periods: periods,
+              onManage: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const TimetablePeriodsScreen(),
+                ),
+              ),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: _MySubjectsBar(
-              subjects: ctrl.teachingSubjects,
-              onAdd: () => _addTeachingSubject(context, ctrl),
-              onRemove: ctrl.removeTeachingSubject,
+              subject: ctrl.teachingSubject,
+              onSet: () => _setTeachingSubject(context, ctrl),
+              onClear: ctrl.clearTeachingSubject,
             ),
           ),
           Expanded(
@@ -101,7 +85,6 @@ class TimetableScreen extends StatelessWidget {
                       subjectAt: ctrl.subjectAt,
                       isMySubject: ctrl.isMyTeachingSubject,
                       onTapCell: (w, p) => _editCell(context, w, p),
-                      onTapPeriod: (p) => _editPeriod(context, p),
                     ),
                   ),
                 );
@@ -113,28 +96,13 @@ class TimetableScreen extends StatelessWidget {
     );
   }
 
-  static Future<void> _deleteLastPeriod(
+  static Future<void> _setTeachingSubject(
     BuildContext context,
     ClassController ctrl,
   ) async {
-    try {
-      await ctrl.deleteLastTimetablePeriod();
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
-      }
-    }
-  }
-
-  static Future<void> _addTeachingSubject(
-    BuildContext context,
-    ClassController ctrl,
-  ) async {
-    final text = TextEditingController();
+    final text = TextEditingController(text: ctrl.teachingSubject ?? '');
     final presets = [
-      ...ctrl.teachingSubjects,
+      if (ctrl.teachingSubject != null) ctrl.teachingSubject!,
       ...const ['语文', '数学', '英语', '物理', '化学', '体育', '班会'],
     ].toSet().toList();
     await showModalBottomSheet<void>(
@@ -152,7 +120,7 @@ class TimetableScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('添加授课科目', style: Theme.of(ctx).textTheme.titleLarge),
+              Text('设置授课科目', style: Theme.of(ctx).textTheme.titleLarge),
               const SizedBox(height: 12),
               TextField(
                 controller: text,
@@ -168,133 +136,25 @@ class TimetableScreen extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   for (final s in presets)
-                    if (!ctrl.teachingSubjects.contains(s))
-                      ActionChip(
-                        label: Text(s),
-                        onPressed: () => text.text = s,
-                      ),
+                    ActionChip(
+                      label: Text(s),
+                      onPressed: () => text.text = s,
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () async {
-                  await ctrl.addTeachingSubject(text.text);
+                  await ctrl.setTeachingSubject(text.text);
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
-                child: const Text('添加'),
+                child: const Text('确定'),
               ),
             ],
           ),
         );
       },
     );
-  }
-
-  static Future<void> _editPeriod(BuildContext context, int period) async {
-    final ctrl = context.read<ClassController>();
-    final row = ctrl.periodAt(period) ??
-        TimetablePeriod(period: period, label: '第$period节');
-    final label = TextEditingController(text: row.label);
-    var start = row.startTime;
-    var end = row.endTime;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setLocal) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    '编辑第 $period 节',
-                    style: Theme.of(ctx).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: label,
-                    decoration: const InputDecoration(
-                      labelText: '节次名称',
-                      hintText: '如第1节、早读、午休',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('开始时间'),
-                    subtitle: Text(start.isEmpty ? '未设置' : start),
-                    trailing: const Icon(Icons.schedule_outlined),
-                    onTap: () async {
-                      final t = await showTimePicker(
-                        context: ctx,
-                        initialTime: _parseTime(start),
-                      );
-                      if (t != null) {
-                        setLocal(() => start = _formatTime(t));
-                      }
-                    },
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('结束时间'),
-                    subtitle: Text(end.isEmpty ? '未设置' : end),
-                    trailing: const Icon(Icons.schedule_outlined),
-                    onTap: () async {
-                      final t = await showTimePicker(
-                        context: ctx,
-                        initialTime: _parseTime(end),
-                      );
-                      if (t != null) {
-                        setLocal(() => end = _formatTime(t));
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      await ctrl.saveTimetablePeriod(
-                        TimetablePeriod(
-                          period: period,
-                          label: label.text.trim(),
-                          startTime: start,
-                          endTime: end,
-                        ),
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('保存'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  static TimeOfDay _parseTime(String raw) {
-    final parts = raw.split(':');
-    if (parts.length >= 2) {
-      final h = int.tryParse(parts[0]) ?? 8;
-      final m = int.tryParse(parts[1]) ?? 0;
-      return TimeOfDay(hour: h.clamp(0, 23), minute: m.clamp(0, 59));
-    }
-    return const TimeOfDay(hour: 8, minute: 0);
-  }
-
-  static String _formatTime(TimeOfDay t) {
-    return '${t.hour.toString().padLeft(2, '0')}:'
-        '${t.minute.toString().padLeft(2, '0')}';
   }
 
   static Future<void> _editCell(
@@ -309,9 +169,9 @@ class TimetableScreen extends StatelessWidget {
     final text = TextEditingController(
       text: ctrl.subjectAt(weekday, period) ?? '',
     );
-    final mySubjects = ctrl.teachingSubjects;
+    final mySubject = ctrl.teachingSubject;
     final presets = [
-      ...mySubjects,
+      if (mySubject != null) mySubject,
       ...const [
         '语文',
         '数学',
@@ -369,7 +229,7 @@ class TimetableScreen extends StatelessWidget {
                 autofocus: true,
                 textInputAction: TextInputAction.done,
               ),
-              if (mySubjects.isNotEmpty) ...[
+              if (mySubject != null) ...[
                 const SizedBox(height: 10),
                 Text(
                   '我的授课',
@@ -382,11 +242,10 @@ class TimetableScreen extends StatelessWidget {
                 Wrap(
                   spacing: 8,
                   children: [
-                    for (final s in mySubjects)
-                      ActionChip(
-                        label: Text(s),
-                        onPressed: () => text.text = s,
-                      ),
+                    ActionChip(
+                      label: Text(mySubject),
+                      onPressed: () => text.text = mySubject,
+                    ),
                   ],
                 ),
               ],
@@ -396,7 +255,7 @@ class TimetableScreen extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   for (final s in presets)
-                    if (!mySubjects.contains(s))
+                    if (s != mySubject)
                       ActionChip(
                         label: Text(s),
                         onPressed: () => text.text = s,
@@ -449,19 +308,89 @@ class TimetableScreen extends StatelessWidget {
   }
 }
 
-class _MySubjectsBar extends StatelessWidget {
-  const _MySubjectsBar({
-    required this.subjects,
-    required this.onAdd,
-    required this.onRemove,
+class _PeriodSettingsBar extends StatelessWidget {
+  const _PeriodSettingsBar({
+    required this.periods,
+    required this.onManage,
   });
 
-  final List<String> subjects;
-  final VoidCallback onAdd;
-  final ValueChanged<String> onRemove;
+  final List<TimetablePeriod> periods;
+  final VoidCallback onManage;
+
+  String _summary() {
+    final n = periods.length;
+    if (n == 0) return '尚未设置节次';
+    final first = periods.first;
+    final start = first.startTime.trim();
+    if (start.isNotEmpty) return '共 $n 节 · $start 起';
+    return '共 $n 节';
+  }
 
   @override
   Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.fill,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onManage,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          child: Row(
+            children: [
+              Icon(AppIcons.clock, size: 20, color: AppTheme.blue),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '节次与作息',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.secondaryLabel,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _summary(),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: AppTheme.label,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                '管理',
+                style: TextStyle(fontSize: 15, color: AppTheme.blue),
+              ),
+              Icon(AppIcons.chevronRight, size: 18, color: AppTheme.blue),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MySubjectsBar extends StatelessWidget {
+  const _MySubjectsBar({
+    required this.subject,
+    required this.onSet,
+    required this.onClear,
+  });
+
+  final String? subject;
+  final VoidCallback onSet;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSubject = subject != null;
     return Material(
       color: AppTheme.fill,
       borderRadius: BorderRadius.circular(12),
@@ -482,31 +411,24 @@ class _MySubjectsBar extends StatelessWidget {
                 ),
                 const Spacer(),
                 TextButton.icon(
-                  onPressed: onAdd,
+                  onPressed: onSet,
                   icon: const Icon(AppIcons.plus, size: 18),
-                  label: const Text('添加'),
+                  label: Text(hasSubject ? '更换' : '设置'),
                 ),
               ],
             ),
-            if (subjects.isEmpty)
+            if (!hasSubject)
               Text(
-                '添加后，课程表中对应格子会高亮显示',
+                '设置后，课程表中对应格子会高亮显示',
                 style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
               )
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final s in subjects)
-                    InputChip(
-                      label: Text(s),
-                      deleteIcon: const Icon(Icons.close, size: 16),
-                      onDeleted: () => onRemove(s),
-                      selected: true,
-                      selectedColor: AppTheme.blue.withValues(alpha: 0.15),
-                    ),
-                ],
+              InputChip(
+                label: Text(subject!),
+                deleteIcon: const Icon(Icons.close, size: 16),
+                onDeleted: onClear,
+                selected: true,
+                selectedColor: AppTheme.blue.withValues(alpha: 0.15),
               ),
           ],
         ),
@@ -523,7 +445,6 @@ class _TimetableGrid extends StatelessWidget {
     required this.subjectAt,
     required this.isMySubject,
     required this.onTapCell,
-    required this.onTapPeriod,
   });
 
   final double dayWidth;
@@ -532,7 +453,6 @@ class _TimetableGrid extends StatelessWidget {
   final String? Function(int weekday, int period) subjectAt;
   final bool Function(String? subject) isMySubject;
   final void Function(int weekday, int period) onTapCell;
-  final void Function(int period) onTapPeriod;
 
   static const _days = TimetableScreen._days;
 
@@ -605,40 +525,34 @@ class _TimetableGrid extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: periodW,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => onTapPeriod(row.period),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                row.displayLabel,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.secondaryLabel,
-                                ),
-                              ),
-                              if (row.timeRange.isNotEmpty)
-                                Text(
-                                  row.timeRange,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    color: AppTheme.tertiaryLabel,
-                                  ),
-                                ),
-                            ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            row.displayLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.secondaryLabel,
+                            ),
                           ),
-                        ),
+                          if (row.timeRange.isNotEmpty)
+                            Text(
+                              row.timeRange,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: AppTheme.tertiaryLabel,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),

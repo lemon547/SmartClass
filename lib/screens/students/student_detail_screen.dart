@@ -107,7 +107,6 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                     ),
                     GroupedTile(
                       title: '积分',
-                      subtitle: rankTitle(s.points),
                       trailing: Text('${s.points}'),
                     ),
                     if (s.note.isNotEmpty)

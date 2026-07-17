@@ -6,7 +6,6 @@ abstract final class AppIcons {
   static const IconData logo = LucideIcons.graduationCap;
   static const IconData home = LucideIcons.house;
   static const IconData students = LucideIcons.users;
-  static const IconData points = LucideIcons.star;
   /// 底部「班级」Tab
   static const IconData classes = LucideIcons.school;
   static const IconData attendance = LucideIcons.clipboardCheck;
@@ -23,12 +22,10 @@ abstract final class AppIcons {
   static const IconData chevronLeft = LucideIcons.chevronLeft;
   static const IconData trash = LucideIcons.trash2;
   static const IconData calendar = LucideIcons.calendar;
-  static const IconData shuffle = LucideIcons.shuffle;
   static const IconData clock = LucideIcons.clock;
   static const IconData circle = LucideIcons.circle;
   static const IconData circleCheck = LucideIcons.circleCheck;
   static const IconData sliders = LucideIcons.slidersHorizontal;
-  static const IconData listPlus = LucideIcons.listPlus;
   static const IconData alert = LucideIcons.circleAlert;
   static const IconData gift = LucideIcons.gift;
   static const IconData notebook = LucideIcons.notebookPen;
@@ -37,7 +34,6 @@ abstract final class AppIcons {
   static const IconData dices = LucideIcons.dices;
   static const IconData clipboardList = LucideIcons.clipboardList;
   static const IconData settings = LucideIcons.settings;
-  static const IconData pencil = LucideIcons.pencil;
   static const IconData users = LucideIcons.usersRound;
   static const IconData chart = LucideIcons.chartColumn;
   static const IconData undo = LucideIcons.undo2;
@@ -50,9 +46,6 @@ abstract final class AppIcons {
   static const IconData moreVert = LucideIcons.ellipsisVertical;
   static const IconData download = LucideIcons.download;
   static const IconData upload = LucideIcons.upload;
-  static const IconData openFile = LucideIcons.externalLink;
-  static const IconData copy = LucideIcons.copy;
   static const IconData share = LucideIcons.share2;
-  static const IconData edit = LucideIcons.squarePen;
   static const IconData fileSheet = LucideIcons.sheet;
 }

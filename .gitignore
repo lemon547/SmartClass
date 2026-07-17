@@ -1,6 +1,9 @@
 # Miscellaneous
 *.class
 *.log
+.flutter_pid
+_wl.bin
+*.db
 *.pyc
 *.swp
 .DS_Store

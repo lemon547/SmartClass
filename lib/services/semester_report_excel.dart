@@ -51,7 +51,6 @@ abstract final class SemesterReportExcel {
       TextCellValue('小组'),
       TextCellValue('班委'),
       TextCellValue('积分'),
-      TextCellValue('段位'),
       TextCellValue('电话'),
     ]);
     final ranked = [...students]..sort((a, b) => b.points.compareTo(a.points));
@@ -63,7 +62,6 @@ abstract final class SemesterReportExcel {
         TextCellValue(s.groupName),
         TextCellValue(s.role),
         IntCellValue(s.points),
-        TextCellValue(rankTitle(s.points)),
         TextCellValue(s.phone),
       ]);
     }
@@ -207,10 +205,6 @@ abstract final class SemesterReportExcel {
     overview.appendRow([TextCellValue('住址'), TextCellValue(student.address)]);
     overview.appendRow([TextCellValue('生日'), TextCellValue(student.birthday)]);
     overview.appendRow([TextCellValue('积分'), IntCellValue(student.points)]);
-    overview.appendRow([
-      TextCellValue('段位'),
-      TextCellValue(rankTitle(student.points)),
-    ]);
     overview.appendRow([TextCellValue('备注'), TextCellValue(student.note)]);
 
     var present = 0, late = 0, leave = 0, absent = 0;

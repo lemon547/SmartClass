@@ -19,7 +19,7 @@ class AppDatabase {
     final path = p.join(dir.path, 'smart_class.db');
     return openDatabase(
       path,
-      version: 14,
+      version: 15,
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
@@ -35,6 +35,7 @@ class AppDatabase {
         await _createV12(db);
         await _createV13(db);
         await _createV14(db);
+        await _createV15(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
@@ -50,6 +51,7 @@ class AppDatabase {
         if (oldVersion < 12) await _createV12(db);
         if (oldVersion < 13) await _createV13(db);
         if (oldVersion < 14) await _createV14(db);
+        if (oldVersion < 15) await _createV15(db);
       },
     );
   }
@@ -407,6 +409,19 @@ class AppDatabase {
         subject TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (class_id, subject)
+      )
+    ''');
+  }
+
+  /// 教师个人待办（不按班级隔离）
+  Future<void> _createV15(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS teacher_todos (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
       )
     ''');
   }

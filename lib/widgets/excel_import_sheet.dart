@@ -19,7 +19,6 @@ Future<void> showExcelImportActions({
   VoidCallback? onManualAdd,
   String manualAddLabel = '手动添加',
   String manualAddSubtitle = '逐条填写',
-  String tip = '先下载模板，用手机上的 WPS 或 Excel 填写后，再点「通过表格导入」。',
 }) async {
   await showModalBottomSheet<void>(
     context: context,

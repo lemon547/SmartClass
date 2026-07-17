@@ -111,7 +111,6 @@ class SettlementsScreen extends StatelessWidget {
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text('${i + 1}.  ${row['name'] ?? ''}'),
-                          subtitle: Text('${row['rank'] ?? ''}'),
                           trailing: Text('${row['points'] ?? 0}',
                               style: const TextStyle(fontSize: 17)),
                         );

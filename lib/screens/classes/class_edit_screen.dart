@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_class/data/class_repository.dart';
+import 'package:smart_class/features/class_features.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -14,6 +15,7 @@ class ClassEditResult {
     required this.subject,
     required this.seatRows,
     required this.seatCols,
+    required this.featureFlags,
   });
 
   final String school;
@@ -24,6 +26,7 @@ class ClassEditResult {
   final String subject;
   final int seatRows;
   final int seatCols;
+  final Map<String, bool> featureFlags;
 }
 
 /// 添加 / 编辑班级（全屏页）
@@ -55,9 +58,16 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
   late final TextEditingController _cols;
   late TeacherRole _role;
   late String _subjectValue;
+  late Map<String, bool> _featureFlags;
 
   static const _presets = ClassRepository.defaultExamSubjects;
   static const _fieldGap = 20.0;
+
+  Map<String, bool> _defaultsFor(TeacherRole role) {
+    return {
+      for (final f in ClassFeatures.all) f.id: f.defaultFor(role),
+    };
+  }
 
   @override
   void initState() {
@@ -72,6 +82,18 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
     _role = e?.teacherRole ?? TeacherRole.homeroom;
     _rows = TextEditingController(text: '${widget.defaultRows}');
     _cols = TextEditingController(text: '${widget.defaultCols}');
+    if (e != null) {
+      _featureFlags = {
+        for (final f in ClassFeatures.all)
+          f.id: ClassFeatures.isVisible(
+            featureId: f.id,
+            role: e.teacherRole,
+            overrides: e.featureFlags,
+          ),
+      };
+    } else {
+      _featureFlags = _defaultsFor(_role);
+    }
   }
 
   @override
@@ -90,6 +112,14 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
     setState(() {
       _subjectValue = s;
       _subject.text = s;
+    });
+  }
+
+  void _setRole(TeacherRole role) {
+    setState(() {
+      _role = role;
+      // 切换角色时用该角色默认模块，避免沿用上一个角色的班务开关
+      _featureFlags = _defaultsFor(role);
     });
   }
 
@@ -127,6 +157,7 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
         subject: subject,
         seatRows: (int.tryParse(_rows.text) ?? 6).clamp(1, 20),
         seatCols: (int.tryParse(_cols.text) ?? 8).clamp(1, 20),
+        featureFlags: Map<String, bool>.from(_featureFlags),
       ),
     );
   }
@@ -135,201 +166,234 @@ class _ClassEditScreenState extends State<ClassEditScreen> {
   Widget build(BuildContext context) {
     final schools = widget.knownSchools.toSet().toList()..sort();
     final isNew = widget.existing == null;
+    final teaching = ClassFeatures.all
+        .where((f) => f.group == ClassFeatureGroup.teaching)
+        .toList();
+    final homeroom = ClassFeatures.all
+        .where((f) => f.group == ClassFeatureGroup.homeroom)
+        .toList();
+    final enabledCount =
+        _featureFlags.values.where((v) => v).length;
 
     return Scaffold(
+      backgroundColor: AppTheme.bg,
       appBar: PageAppBar(
         title: Text(isNew ? '添加班级' : '编辑班级'),
       ),
       body: ListView(
         padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 8,
           bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
         ),
         children: [
-          Text(
-            '先选学校，再填班级与任教身份',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppTheme.secondaryLabel,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _school,
-            decoration: const InputDecoration(
-              labelText: '学校',
-              hintText: '如：XX 中学',
-              border: OutlineInputBorder(),
-            ),
-            textInputAction: TextInputAction.next,
-          ),
-          if (schools.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final s in schools)
-                  ActionChip(
-                    label: Text(s),
-                    onPressed: () => setState(() => _school.text = s),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: _fieldGap),
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-              labelText: '班级名称',
-              hintText: '如：高一（1）班',
-              border: OutlineInputBorder(),
-            ),
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: _fieldGap),
-          TextField(
-            controller: _grade,
-            decoration: const InputDecoration(
-              labelText: '年级',
-              hintText: '如：高一',
-              border: OutlineInputBorder(),
-            ),
-            textInputAction: TextInputAction.next,
-          ),
-          const SizedBox(height: _fieldGap),
-          TextField(
-            controller: _group,
-            decoration: const InputDecoration(
-              labelText: '分组标签（可选）',
-              hintText: '如：高一、任教',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 28),
-          Text(
-            '我的角色',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.label,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SegmentedButton<TeacherRole>(
-            segments: const [
-              ButtonSegment(
-                value: TeacherRole.homeroom,
-                label: Text('班主任'),
-              ),
-              ButtonSegment(
-                value: TeacherRole.subject,
-                label: Text('科任老师'),
-              ),
-            ],
-            selected: {_role},
-            onSelectionChanged: (s) => setState(() => _role = s.first),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            '任教科目',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.label,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _role == TeacherRole.subject
-                ? '选择后显示为「语文老师」「数学老师」等'
-                : '班主任也担任授课，请填写任教科目',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppTheme.tertiaryLabel,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in _presets)
-                FilterChip(
-                  label: Text(s),
-                  selected: _subjectValue == s,
-                  onSelected: (_) => _pickSubject(s),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _subject,
-            decoration: const InputDecoration(
-              labelText: '或自行填写科目',
-              hintText: '如：信息技术、体育',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (v) => setState(() => _subjectValue = v.trim()),
-          ),
-          if (_subjectValue.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              '预览：${ManagedClass(
-                id: '_',
-                name: 'x',
-                teacherRole: _role,
-                subject: _subjectValue,
-                createdAt: DateTime(2000),
-              ).roleLabel}',
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Text(
+              '先选学校，再填班级与任教身份，最后勾选要展示的模块',
               style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.blue,
+                color: AppTheme.secondaryLabel,
+                height: 1.4,
               ),
-            ),
-          ],
-          const SizedBox(height: 28),
-          Text(
-            '座位表尺寸',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.label,
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: _school,
+                  decoration: const InputDecoration(
+                    hintText: '学校，如：XX 中学',
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                if (schools.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final s in schools)
+                        ActionChip(
+                          label: Text(s),
+                          onPressed: () => setState(() => _school.text = s),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: _fieldGap),
+                TextField(
+                  controller: _name,
+                  decoration: const InputDecoration(
+                    hintText: '班级名称，如：高一（1）班',
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: _fieldGap),
+                TextField(
+                  controller: _grade,
+                  decoration: const InputDecoration(
+                    hintText: '年级，如：高一',
+                  ),
+                  textInputAction: TextInputAction.next,
+                ),
+                const SizedBox(height: _fieldGap),
+                TextField(
+                  controller: _group,
+                  decoration: const InputDecoration(
+                    hintText: '分组标签（可选），如：任教',
+                  ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  '我的角色',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.label,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<TeacherRole>(
+                  segments: const [
+                    ButtonSegment(
+                      value: TeacherRole.homeroom,
+                      label: Text('班主任'),
+                    ),
+                    ButtonSegment(
+                      value: TeacherRole.subject,
+                      label: Text('科任老师'),
+                    ),
+                  ],
+                  selected: {_role},
+                  onSelectionChanged: (s) => _setRole(s.first),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  '任教科目',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.label,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _role == TeacherRole.subject
+                      ? '选择后显示为「语文老师」「数学老师」等'
+                      : '班主任也担任授课，请填写任教科目',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.tertiaryLabel,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final s in _presets)
+                      FilterChip(
+                        label: Text(s),
+                        selected: _subjectValue == s,
+                        onSelected: (_) => _pickSubject(s),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _subject,
+                  decoration: const InputDecoration(
+                    hintText: '或自行填写科目，如：信息技术',
+                  ),
+                  onChanged: (v) => setState(() => _subjectValue = v.trim()),
+                ),
+                if (_subjectValue.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    '预览：${ManagedClass(
+                      id: '_',
+                      name: 'x',
+                      teacherRole: _role,
+                      subject: _subjectValue,
+                      createdAt: DateTime(2000),
+                    ).roleLabel}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.blue,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 28),
+                Text(
+                  '座位表尺寸',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.label,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _rows,
+                        decoration: const InputDecoration(hintText: '行数'),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: TextField(
+                        controller: _cols,
+                        decoration: const InputDecoration(hintText: '列数'),
+                        keyboardType: TextInputType.number,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          GroupedSection(
+            header: '展示模块 · 已选 $enabledCount 项',
+            footer: '关闭的功能不会出现在首页与班级入口。切换角色会恢复该角色的默认勾选。',
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _rows,
-                  decoration: const InputDecoration(
-                    labelText: '行数',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
+              for (final f in teaching)
+                SwitchListTile.adaptive(
+                  title: Text(f.title),
+                  subtitle: f.homeShortcut ? const Text('可出现在首页常用工具') : null,
+                  value: _featureFlags[f.id] ?? f.defaultFor(_role),
+                  onChanged: (v) => setState(() => _featureFlags[f.id] = v),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: TextField(
-                  controller: _cols,
-                  decoration: const InputDecoration(
-                    labelText: '列数',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                ),
-              ),
             ],
           ),
-          const SizedBox(height: 28),
-          FilledButton(
-            onPressed: _submit,
-            child: Text(isNew ? '创建' : '保存'),
+          const SizedBox(height: 12),
+          GroupedSection(
+            header: '班务模块',
+            footer: _role == TeacherRole.subject
+                ? '科任默认关闭班务，可按需打开'
+                : null,
+            children: [
+              for (final f in homeroom)
+                SwitchListTile.adaptive(
+                  title: Text(f.title),
+                  value: _featureFlags[f.id] ?? f.defaultFor(_role),
+                  onChanged: (v) => setState(() => _featureFlags[f.id] = v),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: FilledButton(
+              onPressed: _submit,
+              child: Text(isNew ? '创建' : '保存'),
+            ),
           ),
         ],
       ),

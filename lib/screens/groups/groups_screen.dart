@@ -68,7 +68,6 @@ class GroupsScreen extends StatelessWidget {
                       title: s.name,
                       subtitle:
                           s.studentNo.isEmpty ? null : '学号 ${s.studentNo}',
-                      trailing: Text('${s.points}'),
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) =>

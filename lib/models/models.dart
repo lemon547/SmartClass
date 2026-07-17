@@ -583,6 +583,55 @@ class ClassNote {
       );
 }
 
+/// 教师个人待办（今日页）
+class TeacherTodo {
+  final String id;
+  final String title;
+  final bool done;
+  final int sortOrder;
+  final DateTime createdAt;
+
+  const TeacherTodo({
+    required this.id,
+    required this.title,
+    this.done = false,
+    this.sortOrder = 0,
+    required this.createdAt,
+  });
+
+  TeacherTodo copyWith({
+    String? id,
+    String? title,
+    bool? done,
+    int? sortOrder,
+    DateTime? createdAt,
+  }) {
+    return TeacherTodo(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      done: done ?? this.done,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'title': title,
+        'done': done ? 1 : 0,
+        'sort_order': sortOrder,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory TeacherTodo.fromMap(Map<String, Object?> map) => TeacherTodo(
+        id: map['id']! as String,
+        title: map['title']! as String,
+        done: (map['done'] as int?) == 1,
+        sortOrder: (map['sort_order'] as int?) ?? 0,
+        createdAt: DateTime.parse(map['created_at']! as String),
+      );
+}
+
 /// 工作留痕类别（班主任常见台账）
 enum WorkLogCategory {
   safetyEdu,
@@ -816,6 +865,82 @@ class TimetablePeriod {
   }
 }
 
+/// 今日某一节课（含节次与时间）
+class TodayTeachingLesson {
+  final String subject;
+  final String periodLabel;
+  final String timeRange;
+  final String startTime;
+  final String endTime;
+  /// 所属班级展示名，如「高二 3 班」
+  final String classTitle;
+
+  const TodayTeachingLesson({
+    required this.subject,
+    required this.periodLabel,
+    this.timeRange = '',
+    this.startTime = '',
+    this.endTime = '',
+    this.classTitle = '',
+  });
+
+  /// 如「第1节 · 08:00-08:45」
+  String get scheduleLabel {
+    if (timeRange.isEmpty) return periodLabel;
+    return '$periodLabel · $timeRange';
+  }
+
+  /// 如「语文 · 高二 3 班」
+  String get detailLabel {
+    if (classTitle.isEmpty) return subject;
+    return '$subject · $classTitle';
+  }
+
+  DateTime? get _todayStart {
+    final t = _parseClock(startTime.isNotEmpty
+        ? startTime
+        : (timeRange.contains('-') ? timeRange.split('-').first.trim() : ''));
+    return t;
+  }
+
+  DateTime? get _todayEnd {
+    final raw = endTime.isNotEmpty
+        ? endTime
+        : (timeRange.contains('-') ? timeRange.split('-').last.trim() : '');
+    return _parseClock(raw);
+  }
+
+  DateTime? _parseClock(String raw) {
+    final parts = raw.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, h.clamp(0, 23), m.clamp(0, 59));
+  }
+
+  bool get isFinished {
+    final end = _todayEnd;
+    if (end == null) return false;
+    return DateTime.now().isAfter(end);
+  }
+
+  bool get isInProgress {
+    final start = _todayStart;
+    final end = _todayEnd;
+    if (start == null || end == null) return false;
+    final now = DateTime.now();
+    return !now.isBefore(start) && !now.isAfter(end);
+  }
+
+  String get statusLabel {
+    if (isFinished) return '已上完';
+    if (isInProgress) return '进行中';
+    return '待上课';
+  }
+}
+
 class PointReasonPreset {
   final String reason;
   final int delta;
@@ -859,16 +984,6 @@ class Settlement {
       );
 }
 
-/// 参考 classMaster 段位：按累计积分显示称号
-String rankTitle(int points) {
-  if (points >= 200) return '传奇';
-  if (points >= 150) return '钻石';
-  if (points >= 100) return '铂金';
-  if (points >= 70) return '黄金';
-  if (points >= 40) return '白银';
-  if (points >= 20) return '青铜';
-  return '新芽';
-}
 
 /// 倒数日（参考班小二等班主任工具）
 class CountdownItem {

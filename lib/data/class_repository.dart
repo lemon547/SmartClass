@@ -77,6 +77,7 @@ class ClassRepository {
         id: id,
         name: _prefs.getString('class_name') ?? '高一（1）班',
         grade: _prefs.getString('class_grade') ?? '高一',
+        school: '示范中学',
         seatRows: _prefs.getInt('seat_rows') ?? 6,
         seatCols: _prefs.getInt('seat_cols') ?? 8,
         teacherRole: TeacherRole.homeroom,
@@ -207,6 +208,7 @@ class ClassRepository {
         if (fallback.isNotEmpty) {
           next = cls.copyWith(subject: fallback);
           await upsertClass(next);
+          await _syncTeachingSubjectsForClass(next);
         }
       } else {
         await _syncTeachingSubjectsForClass(cls);
@@ -223,18 +225,16 @@ class ClassRepository {
       where: 'class_id = ?',
       whereArgs: [cls.id],
     );
-    final has = rows.any((r) => (r['subject'] as String?) == subject);
-    if (!has) {
-      await db.insert(
-        'teaching_subjects',
-        {
-          'class_id': cls.id,
-          'subject': subject,
-          'sort_order': rows.length,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-    }
+    if (rows.isNotEmpty) return;
+    await db.insert(
+      'teaching_subjects',
+      {
+        'class_id': cls.id,
+        'subject': subject,
+        'sort_order': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
   }
 
   Future<ManagedClass> createClass({
@@ -877,12 +877,12 @@ class ClassRepository {
     final students = await getStudents();
     final ranked = [...students]..sort((a, b) => b.points.compareTo(a.points));
     final snapshot = jsonEncode([
-      for (final s in ranked)
+      for (var i = 0; i < ranked.length; i++)
         {
-          'id': s.id,
-          'name': s.name,
-          'points': s.points,
-          'rank': rankTitle(s.points),
+          'id': ranked[i].id,
+          'name': ranked[i].name,
+          'points': ranked[i].points,
+          'rank': i + 1,
         },
     ]);
     final settlement = Settlement(
@@ -1167,7 +1167,7 @@ class ClassRepository {
       orderBy: 'sort_order ASC, subject ASC',
     );
     if (rows.isNotEmpty) {
-      return rows.map((r) => r['subject']! as String).toList();
+      return [rows.first['subject']! as String];
     }
     final cls = await getClass(currentClassId);
     final sub = cls?.subject.trim() ?? '';
@@ -1176,26 +1176,25 @@ class ClassRepository {
   }
 
   Future<void> setTeachingSubjects(List<String> subjects) async {
+    final subject = subjects
+        .map((s) => s.trim())
+        .firstWhere((s) => s.isNotEmpty, orElse: () => '');
     final db = await AppDatabase.instance.database;
     await db.delete(
       'teaching_subjects',
       where: 'class_id = ?',
       whereArgs: [currentClassId],
     );
-    var order = 0;
-    for (final s in subjects) {
-      final t = s.trim();
-      if (t.isEmpty) continue;
-      await db.insert(
-        'teaching_subjects',
-        {
-          'class_id': currentClassId,
-          'subject': t,
-          'sort_order': order++,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
+    if (subject.isEmpty) return;
+    await db.insert(
+      'teaching_subjects',
+      {
+        'class_id': currentClassId,
+        'subject': subject,
+        'sort_order': 0,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   // ── Countdowns ────────────────────────────────────────────────────────────
@@ -1870,6 +1869,127 @@ class ClassRepository {
     await db.delete('salary_records', where: 'id = ?', whereArgs: [id]);
   }
 
+  // ── Teacher todos (global) ────────────────────────────────────────────────
+
+  Future<List<TeacherTodo>> getTodos() async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'teacher_todos',
+      orderBy: 'done ASC, sort_order ASC, created_at DESC',
+    );
+    return rows.map(TeacherTodo.fromMap).toList();
+  }
+
+  Future<void> upsertTodo(TeacherTodo item) async {
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'teacher_todos',
+      item.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteTodo(String id) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete('teacher_todos', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> seedTodosIfEmpty() async {
+    final existing = await getTodos();
+    if (existing.isNotEmpty) return;
+    final now = DateTime.now();
+    final samples = [
+      '批改语文练习册',
+      '联系李华家长沟通作业',
+      '准备周五班会材料',
+    ];
+    for (var i = 0; i < samples.length; i++) {
+      await upsertTodo(
+        TeacherTodo(
+          id: _uuid.v4(),
+          title: samples[i],
+          done: i == 2,
+          sortOrder: i,
+          createdAt: now.subtract(Duration(minutes: i)),
+        ),
+      );
+    }
+  }
+
+  /// 汇总所有班级「今日我的课」
+  Future<List<TodayTeachingLesson>> collectTodayTeachingLessons() async {
+    final weekday = DateTime.now().weekday;
+    final classes = await getClasses();
+    final db = await AppDatabase.instance.database;
+    final out = <TodayTeachingLesson>[];
+
+    for (final cls in classes) {
+      final subjectRows = await db.query(
+        'teaching_subjects',
+        where: 'class_id = ?',
+        whereArgs: [cls.id],
+        orderBy: 'sort_order ASC',
+      );
+      var mine = subjectRows.map((r) => r['subject']! as String).toList();
+      if (mine.isEmpty && cls.subject.trim().isNotEmpty) {
+        mine = [cls.subject.trim()];
+      }
+      if (mine.isEmpty) continue;
+      final mineSet = mine.map((s) => s.trim()).toSet();
+
+      final periodRows = await db.query(
+        'timetable_periods',
+        where: 'class_id = ?',
+        whereArgs: [cls.id],
+        orderBy: 'period ASC',
+      );
+      final periods = periodRows.isEmpty
+          ? TimetablePeriod.defaults()
+          : periodRows
+              .map(
+                (r) => TimetablePeriod(
+                  period: r['period']! as int,
+                  label: (r['label'] as String?) ?? '',
+                  startTime: (r['start_time'] as String?) ?? '',
+                  endTime: (r['end_time'] as String?) ?? '',
+                ),
+              )
+              .toList();
+      final periodMap = {for (final p in periods) p.period: p};
+
+      final slots = await db.query(
+        'timetable',
+        where: 'class_id = ? AND weekday = ?',
+        whereArgs: [cls.id, weekday],
+        orderBy: 'period ASC',
+      );
+      for (final row in slots) {
+        final subject = ((row['subject'] as String?) ?? '').trim();
+        if (subject.isEmpty || !mineSet.contains(subject)) continue;
+        final period = row['period']! as int;
+        final p = periodMap[period];
+        out.add(
+          TodayTeachingLesson(
+            subject: subject,
+            periodLabel: p?.displayLabel ?? '第$period节',
+            timeRange: p?.timeRange ?? '',
+            startTime: p?.startTime ?? '',
+            endTime: p?.endTime ?? '',
+            classTitle: cls.displayTitle,
+          ),
+        );
+      }
+    }
+
+    out.sort((a, b) {
+      final as = a.startTime;
+      final bs = b.startTime;
+      if (as.isNotEmpty && bs.isNotEmpty) return as.compareTo(bs);
+      return a.periodLabel.compareTo(b.periodLabel);
+    });
+    return out;
+  }
+
   // ── Backup / restore ──────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> _exportClassPrefs(String classId) async {
@@ -2176,18 +2296,14 @@ class ClassRepository {
   // ── Misc ──────────────────────────────────────────────────────────────────
 
   String exportRankingText(List<Student> ranked) {
-    final buf = StringBuffer('名次,姓名,学号,小组,班委,积分,段位\n');
+    final buf = StringBuffer('名次,姓名,学号,小组,班委,积分\n');
     for (var i = 0; i < ranked.length; i++) {
       final s = ranked[i];
       buf.writeln(
-        '${i + 1},${s.name},${s.studentNo},${s.groupName},${s.role},${s.points},${rankTitle(s.points)}',
+        '${i + 1},${s.name},${s.studentNo},${s.groupName},${s.role},${s.points}',
       );
     }
     return buf.toString();
-  }
-
-  Future<void> seedDemoStudents() async {
-    await seedDemoData();
   }
 
   /// 为空的模块填充演示数据，便于试用（已有数据不覆盖）
@@ -2199,22 +2315,18 @@ class ClassRepository {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
+    await _ensureDemoClasses();
+    final savedId = currentClassId;
+    final allClasses = await getClasses();
+    for (var ci = 0; ci < allClasses.length; ci++) {
+      await setCurrentClassId(allClasses[ci].id);
+      await _refreshCurrentClassCache();
+
     var students = await getStudents();
     if (students.isEmpty) {
-      final names = [
-        ('张明', '01', '男', '一组'),
-        ('李华', '02', '女', '一组'),
-        ('王芳', '03', '女', '一组'),
-        ('赵强', '04', '男', '二组'),
-        ('陈静', '05', '女', '二组'),
-        ('刘洋', '06', '男', '二组'),
-        ('杨柳', '07', '女', '三组'),
-        ('黄磊', '08', '男', '三组'),
-        ('周倩', '09', '女', '三组'),
-        ('吴昊', '10', '男', '四组'),
-        ('徐婷', '11', '女', '四组'),
-        ('孙杰', '12', '男', '四组'),
-      ];
+      final names = ci == 0
+          ? _demoRosterClass1
+          : _demoRosterClass2;
       var index = 0;
       for (final (name, no, gender, group) in names) {
         final row = index ~/ 8;
@@ -2389,21 +2501,80 @@ class ClassRepository {
         '物理',
         '化学',
         '体育',
+        '音乐',
         '班会',
       ];
-      var i = 0;
       for (var weekday = 1; weekday <= 5; weekday++) {
-        for (var period = 1; period <= 4; period++) {
+        for (var period = 1; period <= 8; period++) {
+          final subject = subjects[(weekday * 3 + period) % subjects.length];
           await upsertTimetableSlot(
             TimetableSlot(
               id: _uuid.v4(),
               weekday: weekday,
               period: period,
-              subject: subjects[i % subjects.length],
+              subject: subject,
             ),
           );
-          i++;
         }
+      }
+    }
+
+    if ((await getTeachingSubjects()).isEmpty) {
+      final cls = await getClass(currentClassId);
+      final sub = cls?.subject.trim() ?? '';
+      if (sub.isNotEmpty) {
+        await setTeachingSubjects([sub]);
+      }
+    }
+
+    if ((await getDuty()).isEmpty && students.length >= 5) {
+      final dutyPlan = <(int, int, String)>[
+        (1, 0, '黑板 / 讲台'),
+        (2, 1, '扫地'),
+        (3, 2, '拖地'),
+        (4, 3, '擦窗'),
+        (5, 4, '倒垃圾'),
+      ];
+      for (final (weekday, idx, task) in dutyPlan) {
+        await setDuty(
+          weekday: weekday,
+          studentId: students[idx].id,
+          task: task,
+        );
+      }
+    }
+
+    if ((await getAllAttendance()).isEmpty && students.isNotEmpty) {
+      for (var dayOffset = 0; dayOffset < 3; dayOffset++) {
+        final d = ymd(today.subtract(Duration(days: dayOffset)));
+        for (var i = 0; i < students.length; i++) {
+          final status = dayOffset == 0 && i == 2
+              ? AttendanceStatus.leave
+              : dayOffset == 1 && i == 5
+                  ? AttendanceStatus.late
+                  : AttendanceStatus.present;
+          await setAttendance(
+            studentId: students[i].id,
+            date: d,
+            status: status,
+          );
+        }
+      }
+    }
+
+    if ((await getPointRecords(limit: 1)).isEmpty && students.length >= 4) {
+      final pointSamples = <(int, int, String)>[
+        (0, 2, '课堂发言积极'),
+        (1, 3, '作业优秀'),
+        (2, -1, '迟到提醒'),
+        (3, 1, '帮助同学值日'),
+      ];
+      for (final (idx, delta, reason) in pointSamples) {
+        await addPoints(
+          studentId: students[idx].id,
+          delta: delta,
+          reason: reason,
+        );
       }
     }
 
@@ -2460,7 +2631,65 @@ class ClassRepository {
       );
     }
 
+    } // per-class seed
+
     await seedDemoLessonsIfEmpty();
+    await seedTodosIfEmpty();
+
+    await setCurrentClassId(savedId);
+    await _refreshCurrentClassCache();
+  }
+
+  static const _demoSchool = '示范中学';
+
+  static const _demoRosterClass1 = [
+    ('张明', '01', '男', '一组'),
+    ('李华', '02', '女', '一组'),
+    ('王芳', '03', '女', '一组'),
+    ('赵强', '04', '男', '二组'),
+    ('陈静', '05', '女', '二组'),
+    ('刘洋', '06', '男', '二组'),
+    ('杨柳', '07', '女', '三组'),
+    ('黄磊', '08', '男', '三组'),
+    ('周倩', '09', '女', '三组'),
+    ('吴昊', '10', '男', '四组'),
+    ('徐婷', '11', '女', '四组'),
+    ('孙杰', '12', '男', '四组'),
+  ];
+
+  static const _demoRosterClass2 = [
+    ('霍思远', '01', '男', 'A组'),
+    ('唐诗雨', '02', '女', 'A组'),
+    ('陆一鸣', '03', '男', 'A组'),
+    ('方晓月', '04', '女', 'B组'),
+    ('程博文', '05', '男', 'B组'),
+    ('沈佳怡', '06', '女', 'B组'),
+    ('韩子轩', '07', '男', 'C组'),
+    ('叶思琪', '08', '女', 'C组'),
+    ('顾天佑', '09', '男', 'C组'),
+    ('谢雨桐', '10', '女', 'D组'),
+  ];
+
+  /// 新装默认两个演示班级（已有多个班级时不改动）
+  Future<void> _ensureDemoClasses() async {
+    var list = await getClasses();
+    if (list.isEmpty) return;
+
+    final first = list.first;
+    if (first.school.trim().isEmpty) {
+      await upsertClass(first.copyWith(school: _demoSchool));
+      list = await getClasses();
+    }
+
+    if (list.length >= 2) return;
+
+    await createClass(
+      name: '高一（2）班',
+      grade: '高一',
+      school: _demoSchool,
+      teacherRole: TeacherRole.subject,
+      subject: '语文',
+    );
   }
 
   /// 各班级尚无课时时填充演示授课进度（不覆盖已有数据）

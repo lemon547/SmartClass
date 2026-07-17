@@ -209,6 +209,7 @@ class GroupedTile extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.titleColor,
+    this.subtitleColor,
   });
 
   final String title;
@@ -218,6 +219,7 @@ class GroupedTile extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Color? titleColor;
+  final Color? subtitleColor;
 
   @override
   Widget build(BuildContext context) {
@@ -252,7 +254,7 @@ class GroupedTile extends StatelessWidget {
                         subtitle!,
                         style: TextStyle(
                           fontSize: 15,
-                          color: AppTheme.tertiaryLabel,
+                          color: subtitleColor ?? AppTheme.tertiaryLabel,
                           letterSpacing: -0.24,
                         ),
                       ),
@@ -305,6 +307,57 @@ class SearchField extends StatelessWidget {
                     onChanged?.call('');
                   },
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 分组列表空状态：居中图标 + 主文案 + 可选副文案
+class ListEmptyPlaceholder extends StatelessWidget {
+  const ListEmptyPlaceholder({
+    super.key,
+    required this.message,
+    this.detail,
+    this.icon = AppIcons.clock,
+  });
+
+  final String message;
+  final String? detail;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 44, color: AppTheme.quaternaryLabel),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                color: AppTheme.secondaryLabel,
+                letterSpacing: -0.41,
+              ),
+            ),
+            if (detail != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                detail!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.tertiaryLabel,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -394,7 +447,7 @@ class QuietStat extends StatelessWidget {
   }
 }
 
-/// 积分榜名次标（常见排行榜：金银铜）
+/// 积分榜名次标
 class RankBadge extends StatelessWidget {
   const RankBadge({super.key, required this.rank});
 
@@ -402,32 +455,20 @@ class RankBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bg;
-    final Color fg;
-    if (rank == 1) {
-      bg = const Color(0xFFFFF3C4);
-      fg = const Color(0xFFB8860B);
-    } else if (rank == 2) {
-      bg = const Color(0xFFE8E8ED);
-      fg = const Color(0xFF636366);
-    } else if (rank == 3) {
-      bg = const Color(0xFFFFE8D6);
-      fg = const Color(0xFFA85A2E);
-    } else {
-      bg = AppTheme.fill;
-      fg = AppTheme.tertiaryLabel;
-    }
     return Container(
       width: 28,
       height: 28,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      decoration: BoxDecoration(
+        color: AppTheme.fill,
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Text(
         '$rank',
         style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w600,
-          color: fg,
+          color: AppTheme.secondaryLabel,
         ),
       ),
     );

@@ -9,7 +9,7 @@ import 'package:smart_class/screens/students/students_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
-/// 底部 Tab：首页 / 学生 / 班级 / 我的
+/// 底部 Tab：今日 / 学生 / 班级 / 我的
 class ShellScreen extends StatefulWidget {
   const ShellScreen({super.key});
 
@@ -85,7 +85,7 @@ class _ShellScreenState extends State<ShellScreen> {
           NavigationDestination(
             icon: Icon(AppIcons.home),
             selectedIcon: Icon(AppIcons.home),
-            label: '首页',
+            label: '今日',
           ),
           NavigationDestination(
             icon: Icon(AppIcons.students),

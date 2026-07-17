@@ -127,6 +127,21 @@ class AppTheme {
         AppThemeMode.paddi => const Color(0xFFFF3B30),
       };
 
+  /// 状态栏 / 导航栏与页面背景一致（透明状态栏 + 深色/浅色图标）
+  static SystemUiOverlayStyle get systemOverlayStyle {
+    final dark = isDark;
+    return SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarColor: navBar,
+      systemNavigationBarIconBrightness:
+          dark ? Brightness.light : Brightness.dark,
+      systemNavigationBarContrastEnforced: false,
+    );
+  }
+
   static ThemeData get theme {
     final dark = isDark;
     final scheme = ColorScheme(
@@ -155,8 +170,7 @@ class AppTheme {
         foregroundColor: label,
         elevation: 0,
         scrolledUnderElevation: 0,
-        systemOverlayStyle:
-            dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        systemOverlayStyle: systemOverlayStyle,
         titleTextStyle: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w600,
@@ -191,9 +205,13 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: fill,
+        // iOS 风格：无描边、标签不浮到边框上（避免蓝框「选中」丑样式）
+        floatingLabelBehavior: FloatingLabelBehavior.never,
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         hintStyle: TextStyle(color: tertiaryLabel, fontSize: 17),
+        labelStyle: TextStyle(color: tertiaryLabel, fontSize: 17),
+        floatingLabelStyle: TextStyle(color: tertiaryLabel, fontSize: 13),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
@@ -204,7 +222,15 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: blue, width: 1.5),
+          borderSide: BorderSide.none,
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: destructive, width: 1),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: destructive, width: 1),
         ),
       ),
       chipTheme: ChipThemeData(

@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/points/point_rules_screen.dart';
+import 'package:smart_class/screens/points/quick_points_screen.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/theme/mascot_assets.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -229,9 +230,6 @@ class _PointsScreenState extends State<PointsScreen> {
 
   String? _subtitle(Student s, ClassController ctrl) {
     final parts = <String>[];
-    if (ctrl.rankPeriod == 'total') {
-      parts.add(rankTitle(s.points));
-    }
     if (s.groupName.isNotEmpty) parts.add(s.groupName);
     if (ctrl.rankPeriod != 'total') {
       parts.add('累计 ${s.points}');
@@ -265,92 +263,10 @@ class _PointsScreenState extends State<PointsScreen> {
     String name,
     bool positive,
   ) async {
-    final ctrl = context.read<ClassController>();
-    final presets = ctrl.pointPresets
-        .where((p) => positive ? p.delta >= 0 : p.delta < 0)
-        .toList();
-    final fallback = positive
-        ? const PointReasonPreset(reason: '表扬', delta: 2)
-        : const PointReasonPreset(reason: '提醒', delta: -1);
-    final list = presets.isEmpty ? [fallback] : presets;
-    var selected = list.first;
-    var amount = selected.delta.abs().clamp(1, 99);
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('$name · ${positive ? '加分' : '扣分'}',
-                      style: Theme.of(ctx).textTheme.titleLarge),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final p in list)
-                        ChoiceChip(
-                          label: Text(
-                            '${p.reason} ${p.delta > 0 ? '+' : ''}${p.delta}',
-                          ),
-                          selected: selected.reason == p.reason,
-                          onSelected: (_) => setState(() {
-                            selected = p;
-                            amount = p.delta.abs().clamp(1, 99);
-                          }),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Text('分值'),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () => setState(() {
-                          if (amount > 1) amount--;
-                        }),
-                        icon: const Icon(AppIcons.circleMinus),
-                      ),
-                      Text('$amount',
-                          style: const TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w600)),
-                      IconButton(
-                        onPressed: () => setState(() => amount++),
-                        icon: const Icon(AppIcons.circlePlus),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      await ctrl.adjustPoints(
-                        studentId: studentId,
-                        delta: positive ? amount : -amount,
-                        reason: selected.reason,
-                      );
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('确认'),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    await QuickPointsScreen.open(
+      context,
+      positive: positive,
+      initialStudentId: studentId,
     );
   }
 }

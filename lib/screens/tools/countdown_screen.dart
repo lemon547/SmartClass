@@ -7,7 +7,6 @@ import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
-import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 /// 倒数日：支持多条，点击添加/编辑，长按删除
 class CountdownScreen extends StatelessWidget {
@@ -24,18 +23,6 @@ class CountdownScreen extends StatelessWidget {
       appBar: PageAppBar(
         title: const Text('倒数日'),
         actions: [
-          IconButton(
-            tooltip: '导入导出',
-            onPressed: () => showExcelImportActions(
-              context: context,
-              title: '倒数日',
-              downloadTemplate: () =>
-                  context.read<ClassController>().exportCountdownTemplateFile(),
-              importBytes: (bytes, _) =>
-                  context.read<ClassController>().importCountdownFromBytes(bytes),
-            ),
-            icon: const Icon(AppIcons.moreVert),
-          ),
           IconButton(
             tooltip: '添加',
             onPressed: () => _edit(context),
@@ -108,12 +95,6 @@ class CountdownScreen extends StatelessWidget {
           ],
         ],
       ),
-      floatingActionButton: ctrl.countdowns.isEmpty
-          ? null
-          : FloatingActionButton(
-              onPressed: () => _edit(context),
-              child: const Icon(AppIcons.plus),
-            ),
     );
   }
 

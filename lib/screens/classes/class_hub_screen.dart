@@ -29,6 +29,7 @@ import 'package:smart_class/screens/work_logs/work_logs_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/class_switcher_sheet.dart';
 
 /// 班级中心：切换班级后展示该班全部功能入口
 class ClassHubScreen extends StatelessWidget {
@@ -69,7 +70,7 @@ class ClassHubScreen extends StatelessWidget {
                 studentCount: ctrl.students.length,
                 groupCount: ctrl.groupNames.length,
                 examCount: ctrl.exams.length,
-                onSwitchClass: () => _showClassSwitcher(context),
+                onSwitchClass: () => showClassSwitcherSheet(context),
                 onClassFeatures: () =>
                     _push(context, const ClassFeaturesScreen()),
                 onManageClasses: () => _push(context, const ClassesScreen()),
@@ -301,57 +302,6 @@ class ClassHubScreen extends StatelessWidget {
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-  }
-
-  Future<void> _showClassSwitcher(BuildContext context) async {
-    final ctrl = context.read<ClassController>();
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Row(
-                  children: [
-                    Text('切换班级', style: Theme.of(ctx).textTheme.titleMedium),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _push(context, const ClassesScreen());
-                      },
-                      child: const Text('管理'),
-                    ),
-                  ],
-                ),
-              ),
-              for (final c in ctrl.classes)
-                ListTile(
-                  title: Text(c.displayTitle),
-                  subtitle: Text(
-                    [
-                      if (c.school.trim().isNotEmpty) c.school.trim(),
-                      c.roleLabel,
-                    ].join(' · '),
-                  ),
-                  trailing: c.id == ctrl.currentClass?.id
-                      ? Icon(Icons.check, color: AppTheme.blue)
-                      : null,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    await ctrl.switchClass(c.id);
-                  },
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _showPointsTools(BuildContext context) async {

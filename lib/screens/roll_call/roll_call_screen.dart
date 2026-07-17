@@ -23,11 +23,37 @@ class RollCallScreen extends StatefulWidget {
 class _RollCallScreenState extends State<RollCallScreen> {
   final _rand = Random();
   final _picked = <String>{};
+  bool _avoidRepeat = false;
   Student? _current;
   List<Student> _batchResult = [];
   String _spinName = '';
   bool _spinning = false;
   Timer? _timer;
+
+  List<Student> _pool(ClassController ctrl, {String? group}) {
+    var pool = ctrl.students.toList();
+    if (group != null) {
+      pool = pool.where((s) => s.groupName == group).toList();
+    }
+    if (_avoidRepeat) {
+      pool = pool.where((s) => !_picked.contains(s.id)).toList();
+    }
+    return pool;
+  }
+
+  void _markPicked(Iterable<Student> students) {
+    if (!_avoidRepeat) return;
+    for (final s in students) {
+      _picked.add(s.id);
+    }
+  }
+
+  String _emptyPoolMessage() {
+    if (_avoidRepeat && _picked.isNotEmpty) {
+      return '暂无可点学生，请重置已点或关闭不重复';
+    }
+    return '没有可点名的学生';
+  }
 
   @override
   void dispose() {
@@ -36,13 +62,10 @@ class _RollCallScreenState extends State<RollCallScreen> {
   }
 
   Future<void> _pick(ClassController ctrl, {String? group}) async {
-    var pool = ctrl.students.where((s) => !_picked.contains(s.id)).toList();
-    if (group != null) {
-      pool = pool.where((s) => s.groupName == group).toList();
-    }
+    final pool = _pool(ctrl, group: group);
     if (pool.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本轮已点完，可清空后继续')),
+        SnackBar(content: Text(_emptyPoolMessage())),
       );
       return;
     }
@@ -55,7 +78,7 @@ class _RollCallScreenState extends State<RollCallScreen> {
     _timer = Timer.periodic(const Duration(milliseconds: 60), (t) async {
       ticks++;
       setState(() {
-        _spinName = ctrl.students[_rand.nextInt(ctrl.students.length)].name;
+        _spinName = pool[_rand.nextInt(pool.length)].name;
       });
       if (ticks >= 22) {
         t.cancel();
@@ -63,15 +86,14 @@ class _RollCallScreenState extends State<RollCallScreen> {
         setState(() {
           _current = chosen;
           _spinName = chosen.name;
-          _picked.add(chosen.id);
           _spinning = false;
         });
+        _markPicked([chosen]);
         await ctrl.recordRollCall(chosen);
       }
     });
   }
 
-  /// 一次抽多人 — 参考 smart-roll-call「批量点名」
   Future<void> _pickMany(ClassController ctrl) async {
     var count = 3;
     final ok = await showModalBottomSheet<bool>(
@@ -87,9 +109,13 @@ class _RollCallScreenState extends State<RollCallScreen> {
                 children: [
                   Text('一次抽多人', style: Theme.of(ctx).textTheme.titleLarge),
                   const SizedBox(height: 8),
-                  Text('从不重复池中抽取（本轮未点过的）',
-                      style: TextStyle(
-                          color: AppTheme.tertiaryLabel, fontSize: 13)),
+                  Text(
+                    _avoidRepeat ? '从尚未点过的学生中抽取' : '从全班学生中随机抽取',
+                    style: TextStyle(
+                      color: AppTheme.tertiaryLabel,
+                      fontSize: 13,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -126,11 +152,10 @@ class _RollCallScreenState extends State<RollCallScreen> {
     );
     if (ok != true || !mounted) return;
 
-    final pool =
-        ctrl.students.where((s) => !_picked.contains(s.id)).toList()..shuffle(_rand);
+    final pool = _pool(ctrl)..shuffle(_rand);
     if (pool.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本轮已点完，可清空后继续')),
+        SnackBar(content: Text(_emptyPoolMessage())),
       );
       return;
     }
@@ -140,10 +165,8 @@ class _RollCallScreenState extends State<RollCallScreen> {
       _batchResult = chosen;
       _current = null;
       _spinName = chosen.map((s) => s.name).join('、');
-      for (final s in chosen) {
-        _picked.add(s.id);
-      }
     });
+    _markPicked(chosen);
     for (final s in chosen) {
       await ctrl.recordRollCall(s);
     }
@@ -157,15 +180,18 @@ class _RollCallScreenState extends State<RollCallScreen> {
       appBar: PageAppBar(
         title: const Text('随机点名'),
         actions: [
-          TextButton(
-            onPressed: () => setState(() {
-              _picked.clear();
-              _current = null;
-              _batchResult = [];
-              _spinName = '';
-            }),
-            child: const Text('清空已点'),
-          ),
+          if (_avoidRepeat && _picked.isNotEmpty)
+            TextButton(
+              onPressed: _spinning
+                  ? null
+                  : () => setState(() {
+                        _picked.clear();
+                        _current = null;
+                        _batchResult = [];
+                        _spinName = '';
+                      }),
+              child: const Text('重置已点'),
+            ),
         ],
       ),
       body: ListView(
@@ -256,11 +282,24 @@ class _RollCallScreenState extends State<RollCallScreen> {
               child: const Text('按小组点名'),
             ),
           ],
-          const SizedBox(height: 10),
-          Text(
-            '本轮已点 ${_picked.length} / ${ctrl.students.length}',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.tertiaryLabel),
+          const SizedBox(height: 12),
+          GroupedSection(
+            padding: EdgeInsets.zero,
+            children: [
+              SwitchListTile.adaptive(
+                title: const Text('不重复点名'),
+                subtitle: Text(
+                  _avoidRepeat ? '同一人只点一次，点完需重置' : '允许重复抽到同一人',
+                ),
+                value: _avoidRepeat,
+                onChanged: _spinning
+                    ? null
+                    : (v) => setState(() {
+                          _avoidRepeat = v;
+                          _picked.clear();
+                        }),
+              ),
+            ],
           ),
           if (_batchResult.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -288,7 +327,7 @@ class _RollCallScreenState extends State<RollCallScreen> {
           if (_current != null) ...[
             const SizedBox(height: 16),
             GroupedSection(
-              header: '本轮结果',
+              header: '点名结果',
               padding: EdgeInsets.zero,
               children: [
                 GroupedTile(
@@ -297,10 +336,6 @@ class _RollCallScreenState extends State<RollCallScreen> {
                       ? null
                       : '学号 ${_current!.studentNo}',
                   leading: StudentAvatar(name: _current!.name),
-                  trailing: Text(
-                    '${_current!.points} 分',
-                    style: TextStyle(fontSize: 17, color: AppTheme.tertiaryLabel),
-                  ),
                 ),
               ],
             ),
@@ -309,13 +344,12 @@ class _RollCallScreenState extends State<RollCallScreen> {
           GroupedSection(
             header: '历史记录',
             padding: EdgeInsets.zero,
-            footer: '参考 SecRandom 等开源点名工具：公平轮询 + 历史可追溯',
             children: [
               if (ctrl.rollHistory.isEmpty)
-                Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('暂无记录',
-                      style: TextStyle(color: AppTheme.secondaryLabel)),
+                const ListEmptyPlaceholder(
+                  icon: AppIcons.clock,
+                  message: '暂无记录',
+                  detail: '开始点名后会显示在这里',
                 )
               else ...[
                 for (final h in ctrl.rollHistory.take(20))

@@ -188,6 +188,7 @@ class ClassesScreen extends StatelessWidget {
         subject: result.subject,
         seatRows: result.seatRows,
         seatCols: result.seatCols,
+        featureFlags: result.featureFlags,
       );
     } else {
       await ctrl.updateManagedClass(
@@ -200,6 +201,7 @@ class ClassesScreen extends StatelessWidget {
           subject: result.subject,
           seatRows: result.seatRows,
           seatCols: result.seatCols,
+          featureFlags: result.featureFlags,
         ),
       );
     }
