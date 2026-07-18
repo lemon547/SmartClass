@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_class/app.dart';
 import 'package:smart_class/data/class_repository.dart';
+import 'package:smart_class/providers/ai_settings_controller.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/providers/theme_controller.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -28,6 +29,9 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider(
           create: (_) => ThemeController(prefs),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => AiSettingsController(prefs),
         ),
       ],
       child: const SmartClassApp(),

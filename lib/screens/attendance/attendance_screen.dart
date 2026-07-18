@@ -71,6 +71,75 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (picked != null) await ctrl.setSelectedDate(picked);
   }
 
+  Future<void> _editRemark(
+    BuildContext context,
+    ClassController ctrl,
+    Student student,
+    String initial,
+  ) async {
+    final input = TextEditingController(text: initial);
+    final saved = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 4,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${student.name} · 考勤备注',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '如：病假条已交、家长已请假、迟到原因等',
+                style: TextStyle(fontSize: 13, color: AppTheme.secondaryLabel),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: input,
+                autofocus: true,
+                maxLines: 3,
+                minLines: 1,
+                decoration: const InputDecoration(
+                  hintText: '输入备注（可留空清除）',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, input.text.trim()),
+                child: const Text('保存'),
+              ),
+              if (initial.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, ''),
+                  child: const Text('清除备注'),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    input.dispose();
+    if (saved == null || !context.mounted) return;
+    await ctrl.setAttendanceRemark(student.id, saved);
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
@@ -198,8 +267,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               student: student,
                               status: ctrl.attendanceMap[student.id] ??
                                   AttendanceStatus.present,
+                              remark:
+                                  ctrl.attendanceRemarkMap[student.id] ?? '',
                               onChanged: (s) =>
                                   ctrl.markAttendance(student.id, s),
+                              onEditRemark: () => _editRemark(
+                                context,
+                                ctrl,
+                                student,
+                                ctrl.attendanceRemarkMap[student.id] ?? '',
+                              ),
                             ),
                         ],
                       ),
@@ -295,45 +372,83 @@ class _StudentAttendanceRow extends StatelessWidget {
   const _StudentAttendanceRow({
     required this.student,
     required this.status,
+    required this.remark,
     required this.onChanged,
+    required this.onEditRemark,
   });
 
   final Student student;
   final AttendanceStatus status;
+  final String remark;
   final ValueChanged<AttendanceStatus> onChanged;
+  final VoidCallback onEditRemark;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: Row(
         children: [
           StudentAvatar(name: student.name, size: 36),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  student.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                if (student.studentNo.isNotEmpty)
-                  Text(
-                    student.studentNo,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.tertiaryLabel,
+            child: InkWell(
+              onTap: onEditRemark,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: -0.3,
+                      ),
                     ),
-                  ),
-              ],
+                    if (remark.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        remark,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.blue,
+                        ),
+                      ),
+                    ] else if (student.studentNo.isNotEmpty)
+                      Text(
+                        student.studentNo,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.tertiaryLabel,
+                        ),
+                      )
+                    else
+                      Text(
+                        '点姓名可写备注',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.quaternaryLabel,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 8),
+          IconButton(
+            tooltip: '备注',
+            onPressed: onEditRemark,
+            icon: Icon(
+              remark.isNotEmpty ? AppIcons.message : AppIcons.plus,
+              size: 18,
+              color: remark.isNotEmpty ? AppTheme.blue : AppTheme.tertiaryLabel,
+            ),
+          ),
           _StatusSegment(
             value: status,
             onChanged: onChanged,

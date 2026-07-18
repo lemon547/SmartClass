@@ -9,6 +9,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/grades/ai_exam_assist_screen.dart';
+import 'package:smart_class/screens/grades/ai_exam_import_screen.dart';
 import 'package:smart_class/screens/grades/exam_edit_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
@@ -165,6 +167,28 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
                             ),
                           ),
                   ),
+              if (ranked.isNotEmpty) ...[
+                GroupedTile(
+                  title: 'AI 成绩解读',
+                  subtitle: '亮点、薄弱与跟进建议，一键生成',
+                  leading: Icon(Icons.auto_awesome, color: AppTheme.blue),
+                  onTap: () => AiExamAssistScreen.open(
+                    context,
+                    examId: exam.id,
+                    mode: AiExamAssistMode.analyze,
+                  ),
+                ),
+                GroupedTile(
+                  title: '根据本次考试生成班会',
+                  subtitle: '主题、流程、主持话术，可存工作留痕',
+                  leading: Icon(Icons.groups_outlined, color: AppTheme.blue),
+                  onTap: () => AiExamAssistScreen.open(
+                    context,
+                    examId: exam.id,
+                    mode: AiExamAssistMode.classMeeting,
+                  ),
+                ),
+              ],
             ],
           ),
           if (ranked.isNotEmpty) ...[
@@ -297,7 +321,7 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
       context: context,
       builder: (ctx) => CupertinoActionSheet(
         title: const Text('成绩 Excel'),
-        message: const Text('可用 WPS / Excel 编辑后导入'),
+        message: const Text('标准模板可直接导入；任意格式可用 AI 识别'),
         actions: [
           CupertinoActionSheetAction(
             onPressed: () {
@@ -311,7 +335,14 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
               Navigator.pop(ctx);
               _importExcel(context, exam.id);
             },
-            child: const Text('导入 Excel'),
+            child: const Text('导入标准 Excel'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(ctx);
+              AiExamImportScreen.push(context, examId: exam.id);
+            },
+            child: const Text('AI 智能导入（Excel/Word/TXT…）'),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(

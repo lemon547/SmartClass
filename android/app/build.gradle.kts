@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -42,4 +43,11 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // 开源文件选择器：支持「微信 / QQ」分类选文件（图片/媒体/文档）后确认返回
+    // https://github.com/zippo88888888/ZFileManager
+    implementation("com.github.zippo88888888:ZFileManager:version-1.4.7")
+    implementation("com.github.bumptech.glide:glide:4.16.0")
 }

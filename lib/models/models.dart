@@ -120,9 +120,9 @@ class Student {
         role: (map['role'] as String?) ?? '',
         birthday: (map['birthday'] as String?) ?? '',
         address: (map['address'] as String?) ?? '',
-        points: (map['points'] as int?) ?? 0,
-        seatRow: map['seat_row'] as int?,
-        seatCol: map['seat_col'] as int?,
+        points: (map['points'] as num?)?.toInt() ?? 0,
+        seatRow: (map['seat_row'] as num?)?.toInt(),
+        seatCol: (map['seat_col'] as num?)?.toInt(),
         createdAt: DateTime.parse(map['created_at']! as String),
       );
 
@@ -240,7 +240,7 @@ class PointRecord {
   factory PointRecord.fromMap(Map<String, Object?> map) => PointRecord(
         id: map['id']! as String,
         studentId: map['student_id']! as String,
-        delta: map['delta']! as int,
+        delta: (map['delta'] as num?)?.toInt() ?? 0,
         reason: map['reason']! as String,
         createdAt: DateTime.parse(map['created_at']! as String),
       );
@@ -630,6 +630,14 @@ class TeacherTodo {
         sortOrder: (map['sort_order'] as int?) ?? 0,
         createdAt: DateTime.parse(map['created_at']! as String),
       );
+
+  bool isSameDay(DateTime day) {
+    return createdAt.year == day.year &&
+        createdAt.month == day.month &&
+        createdAt.day == day.day;
+  }
+
+  bool get isCreatedToday => isSameDay(DateTime.now());
 }
 
 /// 工作留痕类别（班主任常见台账）
@@ -714,6 +722,193 @@ class WorkLog {
         studentIds: (map['student_ids'] as String?) ?? '',
         createdAt: DateTime.parse(map['created_at']! as String),
         updatedAt: DateTime.parse(map['updated_at']! as String),
+      );
+}
+
+/// 工作留痕附件类型
+enum WorkLogMediaKind {
+  photo,
+  audio,
+  video,
+  file;
+
+  String get label => switch (this) {
+        WorkLogMediaKind.photo => '照片',
+        WorkLogMediaKind.audio => '语音',
+        WorkLogMediaKind.video => '视频',
+        WorkLogMediaKind.file => '文件',
+      };
+
+  static WorkLogMediaKind fromStorage(String raw) {
+    for (final k in WorkLogMediaKind.values) {
+      if (k.name == raw) return k;
+    }
+    return WorkLogMediaKind.file;
+  }
+
+  static WorkLogMediaKind? fromFileName(String name) {
+    final i = name.lastIndexOf('.');
+    if (i < 0 || i == name.length - 1) return WorkLogMediaKind.file;
+    final ext = name.substring(i + 1).toLowerCase();
+    if (const {
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'webp',
+      'heic',
+      'bmp',
+    }.contains(ext)) {
+      return WorkLogMediaKind.photo;
+    }
+    if (const {
+      'mp3',
+      'm4a',
+      'aac',
+      'wav',
+      'ogg',
+      'amr',
+      'flac',
+    }.contains(ext)) {
+      return WorkLogMediaKind.audio;
+    }
+    if (const {
+      'mp4',
+      'mov',
+      'm4v',
+      'avi',
+      'mkv',
+      '3gp',
+      'webm',
+    }.contains(ext)) {
+      return WorkLogMediaKind.video;
+    }
+    return WorkLogMediaKind.file;
+  }
+}
+
+/// 工作留痕本地附件（照片 / 语音 / 视频 / 文件）
+class WorkLogAttachment {
+  final String id;
+  final String workLogId;
+  final WorkLogMediaKind kind;
+  final String fileName;
+  final String storedName;
+  final String mimeHint;
+  final int sizeBytes;
+  final DateTime createdAt;
+
+  const WorkLogAttachment({
+    required this.id,
+    required this.workLogId,
+    required this.kind,
+    required this.fileName,
+    required this.storedName,
+    this.mimeHint = '',
+    this.sizeBytes = 0,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'work_log_id': workLogId,
+        'kind': kind.name,
+        'file_name': fileName,
+        'stored_name': storedName,
+        'mime_hint': mimeHint,
+        'size_bytes': sizeBytes,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory WorkLogAttachment.fromMap(Map<String, Object?> map) =>
+      WorkLogAttachment(
+        id: map['id']! as String,
+        workLogId: map['work_log_id']! as String,
+        kind: WorkLogMediaKind.fromStorage(map['kind']! as String),
+        fileName: map['file_name']! as String,
+        storedName: map['stored_name']! as String,
+        mimeHint: (map['mime_hint'] as String?) ?? '',
+        sizeBytes: (map['size_bytes'] as int?) ?? 0,
+        createdAt: DateTime.parse(map['created_at']! as String),
+      );
+}
+
+/// 请假记录
+class LeaveRecord {
+  final String id;
+  final String studentId;
+  final String date;
+  final String reason;
+  final String pickup;
+  final DateTime createdAt;
+
+  const LeaveRecord({
+    required this.id,
+    required this.studentId,
+    required this.date,
+    this.reason = '',
+    this.pickup = '',
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'student_id': studentId,
+        'date': date,
+        'reason': reason,
+        'pickup': pickup,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory LeaveRecord.fromMap(Map<String, Object?> map) => LeaveRecord(
+        id: map['id']! as String,
+        studentId: map['student_id']! as String,
+        date: map['date']! as String,
+        reason: (map['reason'] as String?) ?? '',
+        pickup: (map['pickup'] as String?) ?? '',
+        createdAt: DateTime.parse(map['created_at']! as String),
+      );
+}
+
+/// 违纪处理记录
+class DisciplineRecord {
+  final String id;
+  final String studentId;
+  final String date;
+  final String title;
+  final String action;
+  final int pointsDelta;
+  final DateTime createdAt;
+
+  const DisciplineRecord({
+    required this.id,
+    required this.studentId,
+    required this.date,
+    required this.title,
+    this.action = '',
+    this.pointsDelta = 0,
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'student_id': studentId,
+        'date': date,
+        'title': title,
+        'action': action,
+        'points_delta': pointsDelta,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory DisciplineRecord.fromMap(Map<String, Object?> map) =>
+      DisciplineRecord(
+        id: map['id']! as String,
+        studentId: map['student_id']! as String,
+        date: map['date']! as String,
+        title: map['title']! as String,
+        action: (map['action'] as String?) ?? '',
+        pointsDelta: (map['points_delta'] as int?) ?? 0,
+        createdAt: DateTime.parse(map['created_at']! as String),
       );
 }
 
@@ -874,6 +1069,10 @@ class TodayTeachingLesson {
   final String endTime;
   /// 所属班级展示名，如「高二 3 班」
   final String classTitle;
+  final String classId;
+  final int weekday;
+  final int period;
+  final String location;
 
   const TodayTeachingLesson({
     required this.subject,
@@ -882,6 +1081,10 @@ class TodayTeachingLesson {
     this.startTime = '',
     this.endTime = '',
     this.classTitle = '',
+    this.classId = '',
+    this.weekday = 0,
+    this.period = 0,
+    this.location = '',
   });
 
   /// 如「第1节 · 08:00-08:45」
@@ -894,6 +1097,14 @@ class TodayTeachingLesson {
   String get detailLabel {
     if (classTitle.isEmpty) return subject;
     return '$subject · $classTitle';
+  }
+
+  String get classLocationLabel {
+    final parts = <String>[
+      if (classTitle.isNotEmpty) classTitle,
+      if (location.trim().isNotEmpty) location.trim(),
+    ];
+    return parts.join(' · ');
   }
 
   DateTime? get _todayStart {

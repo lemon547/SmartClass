@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/features/class_features.dart';
 import 'package:smart_class/models/models.dart';
@@ -10,13 +11,13 @@ import 'package:smart_class/screens/attendance/attendance_screen.dart';
 import 'package:smart_class/screens/grades/grades_screen.dart';
 import 'package:smart_class/screens/points/quick_points_screen.dart';
 import 'package:smart_class/screens/roll_call/roll_call_screen.dart';
-import 'package:smart_class/screens/timetable/timetable_screen.dart';
+import 'package:smart_class/screens/timetable/teacher_timetable_screen.dart';
+import 'package:smart_class/screens/todos/todos_screen.dart';
 import 'package:smart_class/screens/tools/countdown_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/theme/mascot_assets.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
-import 'package:smart_class/widgets/class_switcher_sheet.dart';
 import 'package:smart_class/widgets/paddi_mascot.dart';
 
 String _todayLine() {
@@ -33,12 +34,9 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
     final theme = context.watch<ThemeController>();
-    final title =
-        ctrl.currentClass?.displayTitle ?? ctrl.profile.displayTitle;
     final birthdays = ctrl.todayBirthdays;
     final nearest = ctrl.nearestCountdown;
-    final lessons = ctrl.todayTeachingLessons;
-    final pendingTodos = ctrl.todos.where((t) => !t.done).length;
+    final pendingTodos = ctrl.todayTodos.where((t) => !t.done).length;
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -48,8 +46,6 @@ class HomeScreen extends StatelessWidget {
           children: [
             _TodayHeader(
               dateLine: _todayLine(),
-              classTitle: title,
-              onSwitchClass: () => showClassSwitcherSheet(context),
               onToggleTheme: () {
                 final next = theme.mode == AppThemeMode.night
                     ? AppThemeMode.day
@@ -80,7 +76,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
             ],
-            _ScheduleCard(lessons: lessons),
+            const _ScheduleCard(),
             const SizedBox(height: 12),
             const _TodoCard(),
             const SizedBox(height: 12),
@@ -108,7 +104,8 @@ class HomeScreen extends StatelessWidget {
                 ],
               ),
             ],
-            if (pendingTodos == 0 && lessons.isEmpty) const SizedBox.shrink(),
+            if (pendingTodos == 0 && ctrl.todayTeachingLessons.isEmpty)
+              const SizedBox.shrink(),
           ],
         ),
       ),
@@ -119,14 +116,10 @@ class HomeScreen extends StatelessWidget {
 class _TodayHeader extends StatelessWidget {
   const _TodayHeader({
     required this.dateLine,
-    required this.classTitle,
-    required this.onSwitchClass,
     required this.onToggleTheme,
   });
 
   final String dateLine;
-  final String classTitle;
-  final VoidCallback onSwitchClass;
   final VoidCallback onToggleTheme;
 
   @override
@@ -138,15 +131,11 @@ class _TodayHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              InkWell(
-                onTap: onSwitchClass,
-                borderRadius: BorderRadius.circular(6),
-                child: Text(
-                  '$dateLine · $classTitle',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.tertiaryLabel,
-                  ),
+              Text(
+                dateLine,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.tertiaryLabel,
                 ),
               ),
               const SizedBox(height: 2),
@@ -346,9 +335,7 @@ class _BirthdayBanner extends StatelessWidget {
 }
 
 class _ScheduleCard extends StatefulWidget {
-  const _ScheduleCard({required this.lessons});
-
-  final List<TodayTeachingLesson> lessons;
+  const _ScheduleCard();
 
   @override
   State<_ScheduleCard> createState() => _ScheduleCardState();
@@ -373,7 +360,9 @@ class _ScheduleCardState extends State<_ScheduleCard> {
 
   @override
   Widget build(BuildContext context) {
-    final lessons = widget.lessons;
+    final ctrl = context.watch<ClassController>();
+    final lessons = ctrl.todayTeachingLessons;
+
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.surface,
@@ -382,11 +371,11 @@ class _ScheduleCardState extends State<_ScheduleCard> {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 8, 4),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
             child: Row(
               children: [
                 const Text(
-                  '今日课程',
+                  '今日授课',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w600,
@@ -394,21 +383,29 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                 ),
                 const Spacer(),
                 TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const TimetableScreen()),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('编辑'),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const TeacherTimetableScreen(initialTab: 1),
+                    ),
+                  ),
+                  child: const Text('课表', style: TextStyle(fontSize: 13)),
                 ),
               ],
             ),
           ),
           if (lessons.isEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 18),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  '今天没有你的课',
+                  '今天没有需要你上的课',
                   style: TextStyle(color: AppTheme.tertiaryLabel, fontSize: 15),
                 ),
               ),
@@ -431,45 +428,96 @@ class _LessonRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final done = lesson.isFinished;
     final active = lesson.isInProgress;
+    final time = lesson.startTime.isNotEmpty
+        ? lesson.startTime
+        : (lesson.timeRange.contains('-')
+            ? lesson.timeRange.split('-').first.trim()
+            : lesson.timeRange);
+
     return InkWell(
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const TimetableScreen()),
+        MaterialPageRoute(
+          builder: (_) => const TeacherTimetableScreen(initialTab: 1),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
             SizedBox(
-              width: 64,
-              child: Text(
-                lesson.periodLabel,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: active ? AppTheme.blue : AppTheme.tertiaryLabel,
-                ),
+              width: 70,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    lesson.periodLabel,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: active ? AppTheme.blue : AppTheme.tertiaryLabel,
+                    ),
+                  ),
+                  if (time.isNotEmpty)
+                    Text(
+                      time,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.tertiaryLabel,
+                      ),
+                    ),
+                ],
               ),
             ),
             Expanded(
-              child: Text(
-                lesson.detailLabel,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: done ? AppTheme.tertiaryLabel : AppTheme.label,
-                  decoration:
-                      done ? TextDecoration.lineThrough : TextDecoration.none,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    lesson.subject,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: done ? AppTheme.tertiaryLabel : AppTheme.label,
+                      decoration: done
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
+                    ),
+                  ),
+                  if (lesson.classTitle.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      lesson.classTitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.secondaryLabel,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (lesson.timeRange.isNotEmpty)
-              Text(
-                lesson.timeRange,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppTheme.tertiaryLabel,
+            if (active)
+              Container(
+                margin: const EdgeInsets.only(right: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.blue.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '进行中',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.blue,
+                  ),
                 ),
               ),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: AppTheme.quaternaryLabel,
+            ),
           ],
         ),
       ),
@@ -500,13 +548,22 @@ class _TodoCardState extends State<_TodoCard> {
     await ctrl.addTodo(text);
   }
 
+  void _openAll() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TodosScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
-    final todos = ctrl.todos;
+    final todos = ctrl.todayTodos;
     final pending = todos.where((t) => !t.done).length;
+    final preview = todos.take(6).toList();
+    final hasMore = todos.length > preview.length;
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(14),
@@ -514,26 +571,35 @@ class _TodoCardState extends State<_TodoCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: Row(
-              children: [
-                const Text(
-                  '待办事项',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
+          InkWell(
+            onTap: _openAll,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 10, 8),
+              child: Row(
+                children: [
+                  const Text(
+                    '待办事项',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  pending == 0 ? '暂无待办' : '$pending 项待办',
-                  style: TextStyle(
-                    fontSize: 13,
+                  const Spacer(),
+                  Text(
+                    pending == 0 ? '今日暂无' : '今日 $pending 项',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppTheme.tertiaryLabel,
+                    ),
+                  ),
+                  Icon(
+                    AppIcons.chevronRight,
+                    size: 18,
                     color: AppTheme.tertiaryLabel,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Padding(
@@ -552,57 +618,95 @@ class _TodoCardState extends State<_TodoCard> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
               child: Text(
-                '还没有待办，上面输入一条试试',
+                '还没有今日待办，上面输入一条试试',
                 style: TextStyle(color: AppTheme.tertiaryLabel, fontSize: 14),
               ),
             )
           else
-            for (final t in todos)
-              Dismissible(
-                key: ValueKey(t.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  color: AppTheme.destructive,
-                  child: const Icon(AppIcons.trash, color: Colors.white),
-                ),
-                onDismissed: (_) => ctrl.deleteTodo(t.id),
-                child: InkWell(
-                  onTap: () => ctrl.toggleTodo(t.id),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          t.done ? AppIcons.circleCheck : AppIcons.circle,
-                          size: 22,
-                          color: t.done ? AppTheme.blue : AppTheme.quaternaryLabel,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            t.title,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: t.done
-                                  ? AppTheme.tertiaryLabel
-                                  : AppTheme.label,
-                              decoration: t.done
-                                  ? TextDecoration.lineThrough
-                                  : TextDecoration.none,
+            Column(
+              children: [
+                SlidableAutoCloseBehavior(
+                  child: Column(
+                    children: [
+                      for (final t in preview)
+                        AppleDeleteSlidable(
+                          itemKey: ValueKey(t.id),
+                          onDelete: () => ctrl.deleteTodo(t.id),
+                          child: InkWell(
+                            onTap: () => ctrl.toggleTodo(t.id),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    t.done
+                                        ? AppIcons.circleCheck
+                                        : AppIcons.circle,
+                                    size: 22,
+                                    color: t.done
+                                        ? AppTheme.blue
+                                        : AppTheme.quaternaryLabel,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      t.title,
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: t.done
+                                            ? AppTheme.tertiaryLabel
+                                            : AppTheme.label,
+                                        decoration: t.done
+                                            ? TextDecoration.lineThrough
+                                            : TextDecoration.none,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!t.isCreatedToday && !t.done)
+                                    Text(
+                                      '往日',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppTheme.quaternaryLabel,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
+                        ),
+                    ],
+                  ),
+                ),
+                InkWell(
+                  onTap: _openAll,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          hasMore ? '查看全部待办与历史' : '查看全部与历史',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppTheme.blue,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Icon(
+                          AppIcons.chevronRight,
+                          size: 16,
+                          color: AppTheme.blue,
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-          const SizedBox(height: 6),
+              ],
+            ),
         ],
       ),
     );

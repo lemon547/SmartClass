@@ -1,9 +1,11 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:smart_class/data/app_database.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/services/lesson_archive_store.dart';
+import 'package:smart_class/services/work_log_demo_media.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
@@ -26,6 +28,8 @@ class ClassRepository {
     'countdowns',
     'fund_records',
     'work_logs',
+    'leave_records',
+    'discipline_records',
     'exams',
     'semesters',
     'timetable',
@@ -34,6 +38,7 @@ class ClassRepository {
     'lesson_units',
     'lesson_files',
     'exam_files',
+    'work_log_attachments',
   ];
 
   String? _currentClassId;
@@ -288,6 +293,10 @@ class ClassRepository {
     await LessonArchiveStore.deleteClassDir(id);
     await LocalFileArchive.deleteClassDir(
       root: LocalFileArchive.examRoot,
+      classId: id,
+    );
+    await LocalFileArchive.deleteClassDir(
+      root: LocalFileArchive.workLogRoot,
       classId: id,
     );
     await _prefs.remove('point_presets_json_$id');
@@ -1062,21 +1071,39 @@ class ClassRepository {
   }
 
   Future<void> upsertTimetableSlot(TimetableSlot slot) async {
+    await upsertTimetableSlotForClass(currentClassId, slot);
+  }
+
+  Future<void> upsertTimetableSlotForClass(
+    String classId,
+    TimetableSlot slot,
+  ) async {
     final db = await AppDatabase.instance.database;
     await db.delete(
       'timetable',
       where: 'weekday = ? AND period = ? AND class_id = ?',
-      whereArgs: [slot.weekday, slot.period, currentClassId],
+      whereArgs: [slot.weekday, slot.period, classId],
     );
-    await db.insert('timetable', _withClass(slot.toMap()));
+    await db.insert('timetable', {
+      ...slot.toMap(),
+      'class_id': classId,
+    });
   }
 
   Future<void> clearTimetableSlot(int weekday, int period) async {
+    await clearTimetableSlotForClass(currentClassId, weekday, period);
+  }
+
+  Future<void> clearTimetableSlotForClass(
+    String classId,
+    int weekday,
+    int period,
+  ) async {
     final db = await AppDatabase.instance.database;
     await db.delete(
       'timetable',
       where: 'weekday = ? AND period = ? AND class_id = ?',
-      whereArgs: [weekday, period, currentClassId],
+      whereArgs: [weekday, period, classId],
     );
   }
 
@@ -1176,6 +1203,13 @@ class ClassRepository {
   }
 
   Future<void> setTeachingSubjects(List<String> subjects) async {
+    await setTeachingSubjectsForClass(currentClassId, subjects);
+  }
+
+  Future<void> setTeachingSubjectsForClass(
+    String classId,
+    List<String> subjects,
+  ) async {
     final subject = subjects
         .map((s) => s.trim())
         .firstWhere((s) => s.isNotEmpty, orElse: () => '');
@@ -1183,13 +1217,13 @@ class ClassRepository {
     await db.delete(
       'teaching_subjects',
       where: 'class_id = ?',
-      whereArgs: [currentClassId],
+      whereArgs: [classId],
     );
     if (subject.isEmpty) return;
     await db.insert(
       'teaching_subjects',
       {
-        'class_id': currentClassId,
+        'class_id': classId,
         'subject': subject,
         'sort_order': 0,
       },
@@ -1283,11 +1317,228 @@ class ClassRepository {
 
   Future<void> deleteWorkLog(String id) async {
     final db = await AppDatabase.instance.database;
+    final attachments = await getWorkLogAttachments(workLogId: id);
+    for (final a in attachments) {
+      await deleteWorkLogAttachment(a);
+    }
     await db.delete(
       'work_logs',
       where: 'id = ? AND class_id = ?',
       whereArgs: [id, currentClassId],
     );
+  }
+
+  Future<List<WorkLogAttachment>> getAllWorkLogAttachments() async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'work_log_attachments',
+      where: 'class_id = ?',
+      whereArgs: [currentClassId],
+      orderBy: 'created_at ASC',
+    );
+    return rows.map(WorkLogAttachment.fromMap).toList();
+  }
+
+  Future<List<WorkLogAttachment>> getWorkLogAttachments({
+    required String workLogId,
+  }) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'work_log_attachments',
+      where: 'class_id = ? AND work_log_id = ?',
+      whereArgs: [currentClassId, workLogId],
+      orderBy: 'created_at ASC',
+    );
+    return rows.map(WorkLogAttachment.fromMap).toList();
+  }
+
+  Future<WorkLogAttachment> importWorkLogAttachment({
+    required String workLogId,
+    required WorkLogMediaKind kind,
+    required String sourcePath,
+    required String originalName,
+    String mimeHint = '',
+    String? classId,
+  }) async {
+    final cid = classId ?? currentClassId;
+    final imported = await LocalFileArchive.importFile(
+      root: LocalFileArchive.workLogRoot,
+      classId: cid,
+      ownerId: workLogId,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    final item = WorkLogAttachment(
+      id: _uuid.v4(),
+      workLogId: workLogId,
+      kind: kind,
+      fileName: originalName,
+      storedName: imported.storedName,
+      mimeHint: mimeHint,
+      sizeBytes: imported.sizeBytes,
+      createdAt: DateTime.now(),
+    );
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'work_log_attachments',
+      {...item.toMap(), 'class_id': cid},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    return item;
+  }
+
+  Future<void> deleteWorkLogAttachment(WorkLogAttachment item) async {
+    final db = await AppDatabase.instance.database;
+    var cid = currentClassId;
+    final rows = await db.query(
+      'work_log_attachments',
+      columns: ['class_id'],
+      where: 'id = ?',
+      whereArgs: [item.id],
+      limit: 1,
+    );
+    if (rows.isNotEmpty) {
+      cid = rows.first['class_id'] as String? ?? currentClassId;
+    }
+    await db.delete(
+      'work_log_attachments',
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+    await LocalFileArchive.deleteFile(
+      root: LocalFileArchive.workLogRoot,
+      classId: cid,
+      ownerId: item.workLogId,
+      storedName: item.storedName,
+    );
+  }
+
+  Future<String> workLogAttachmentAbsolutePath(WorkLogAttachment item) =>
+      LocalFileArchive.absolutePath(
+        root: LocalFileArchive.workLogRoot,
+        classId: currentClassId,
+        ownerId: item.workLogId,
+        storedName: item.storedName,
+      );
+
+  // ── Leave / discipline (日常) ──────────────────────────────────────────────
+
+  Future<List<LeaveRecord>> getLeaveRecords({String? date}) async {
+    final db = await AppDatabase.instance.database;
+    final where = StringBuffer('class_id = ?');
+    final args = <Object?>[currentClassId];
+    if (date != null) {
+      where.write(' AND date = ?');
+      args.add(date);
+    }
+    final rows = await db.query(
+      'leave_records',
+      where: where.toString(),
+      whereArgs: args,
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(LeaveRecord.fromMap).toList();
+  }
+
+  Future<void> upsertLeaveRecord(LeaveRecord item) async {
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'leave_records',
+      _withClass(item.toMap()),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteLeaveRecord(String id) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete(
+      'leave_records',
+      where: 'id = ? AND class_id = ?',
+      whereArgs: [id, currentClassId],
+    );
+  }
+
+  Future<List<DisciplineRecord>> getDisciplineRecords({String? date}) async {
+    final db = await AppDatabase.instance.database;
+    final where = StringBuffer('class_id = ?');
+    final args = <Object?>[currentClassId];
+    if (date != null) {
+      where.write(' AND date = ?');
+      args.add(date);
+    }
+    final rows = await db.query(
+      'discipline_records',
+      where: where.toString(),
+      whereArgs: args,
+      orderBy: 'created_at DESC',
+    );
+    return rows.map(DisciplineRecord.fromMap).toList();
+  }
+
+  Future<void> upsertDisciplineRecord(DisciplineRecord item) async {
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'discipline_records',
+      _withClass(item.toMap()),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteDisciplineRecord(String id) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete(
+      'discipline_records',
+      where: 'id = ? AND class_id = ?',
+      whereArgs: [id, currentClassId],
+    );
+  }
+
+  bool get deductionReminderEnabled =>
+      _prefs.getBool(_scopedPrefKey('deduction_reminder_enabled')) ?? true;
+
+  Future<void> setDeductionReminderEnabled(bool v) async {
+    await _prefs.setBool(_scopedPrefKey('deduction_reminder_enabled'), v);
+  }
+
+  int get deductionReminderThreshold =>
+      _prefs.getInt(_scopedPrefKey('deduction_reminder_threshold')) ?? 10;
+
+  Future<void> setDeductionReminderThreshold(int v) async {
+    await _prefs.setInt(_scopedPrefKey('deduction_reminder_threshold'), v);
+  }
+
+  /// 负分累计（绝对值）达到阈值的学生
+  Future<List<(Student, int)>> studentsOverDeductionThreshold() async {
+    if (!deductionReminderEnabled) return [];
+    final threshold = deductionReminderThreshold;
+    final students = await getStudents();
+    if (students.isEmpty) return [];
+
+    final db = await AppDatabase.instance.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT student_id AS sid,
+             COALESCE(SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END), 0) AS neg
+      FROM point_records
+      WHERE class_id = ?
+      GROUP BY student_id
+      HAVING neg >= ?
+      ORDER BY neg DESC
+      ''',
+      [currentClassId, threshold],
+    );
+
+    final byId = {for (final s in students) s.id: s};
+    final out = <(Student, int)>[];
+    for (final row in rows) {
+      final id = row['sid'] as String?;
+      if (id == null) continue;
+      final student = byId[id];
+      if (student == null) continue;
+      final neg = (row['neg'] as num?)?.toInt() ?? 0;
+      if (neg >= threshold) out.add((student, neg));
+    }
+    return out;
   }
 
   // ── Exams ─────────────────────────────────────────────────────────────────
@@ -1898,45 +2149,64 @@ class ClassRepository {
     final existing = await getTodos();
     if (existing.isNotEmpty) return;
     final now = DateTime.now();
-    final samples = [
-      '批改语文练习册',
-      '联系李华家长沟通作业',
-      '准备周五班会材料',
+    final samples = <(String, bool, Duration)>[
+      ('批改语文练习册', false, Duration.zero),
+      ('联系李华家长沟通作业', false, const Duration(minutes: 1)),
+      ('准备周五班会材料', true, const Duration(minutes: 2)),
+      ('整理上周班会照片', true, const Duration(days: 2)),
     ];
     for (var i = 0; i < samples.length; i++) {
+      final s = samples[i];
       await upsertTodo(
         TeacherTodo(
           id: _uuid.v4(),
-          title: samples[i],
-          done: i == 2,
+          title: s.$1,
+          done: s.$2,
           sortOrder: i,
-          createdAt: now.subtract(Duration(minutes: i)),
+          createdAt: now.subtract(s.$3),
         ),
       );
     }
   }
 
-  /// 汇总所有班级「今日我的课」
-  Future<List<TodayTeachingLesson>> collectTodayTeachingLessons() async {
-    final weekday = DateTime.now().weekday;
+  /// 汇总各班课表
+  /// [mineOnly] true=仅本人授课科目（跨班按科目名汇总）；false=该班全部科目
+  /// [weekday] null=整周；1-7=某一天
+  /// [classId] null=全部班级；指定则只查该班
+  Future<List<TodayTeachingLesson>> collectTeachingLessons({
+    bool mineOnly = true,
+    int? weekday,
+    String? classId,
+  }) async {
     final classes = await getClasses();
+    final targets = classId == null
+        ? classes
+        : classes.where((c) => c.id == classId).toList();
     final db = await AppDatabase.instance.database;
     final out = <TodayTeachingLesson>[];
 
-    for (final cls in classes) {
-      final subjectRows = await db.query(
-        'teaching_subjects',
-        where: 'class_id = ?',
-        whereArgs: [cls.id],
-        orderBy: 'sort_order ASC',
-      );
-      var mine = subjectRows.map((r) => r['subject']! as String).toList();
-      if (mine.isEmpty && cls.subject.trim().isNotEmpty) {
-        mine = [cls.subject.trim()];
+    // 本人科目：汇总「所有班级」的授课科目设置，再按科目名跨班匹配
+    Set<String>? mineSubjects;
+    if (mineOnly) {
+      mineSubjects = <String>{};
+      for (final cls in classes) {
+        final subjectRows = await db.query(
+          'teaching_subjects',
+          where: 'class_id = ?',
+          whereArgs: [cls.id],
+          orderBy: 'sort_order ASC',
+        );
+        for (final r in subjectRows) {
+          final s = (r['subject'] as String?)?.trim() ?? '';
+          if (s.isNotEmpty) mineSubjects.add(s);
+        }
+        final fallback = cls.subject.trim();
+        if (fallback.isNotEmpty) mineSubjects.add(fallback);
       }
-      if (mine.isEmpty) continue;
-      final mineSet = mine.map((s) => s.trim()).toSet();
+      if (mineSubjects.isEmpty) return out;
+    }
 
+    for (final cls in targets) {
       final periodRows = await db.query(
         'timetable_periods',
         where: 'class_id = ?',
@@ -1957,16 +2227,25 @@ class ClassRepository {
               .toList();
       final periodMap = {for (final p in periods) p.period: p};
 
+      final where = StringBuffer('class_id = ?');
+      final args = <Object?>[cls.id];
+      if (weekday != null) {
+        where.write(' AND weekday = ?');
+        args.add(weekday);
+      }
+
       final slots = await db.query(
         'timetable',
-        where: 'class_id = ? AND weekday = ?',
-        whereArgs: [cls.id, weekday],
-        orderBy: 'period ASC',
+        where: where.toString(),
+        whereArgs: args,
+        orderBy: 'weekday ASC, period ASC',
       );
       for (final row in slots) {
         final subject = ((row['subject'] as String?) ?? '').trim();
-        if (subject.isEmpty || !mineSet.contains(subject)) continue;
+        if (subject.isEmpty) continue;
+        if (mineSubjects != null && !mineSubjects.contains(subject)) continue;
         final period = row['period']! as int;
+        final w = row['weekday']! as int;
         final p = periodMap[period];
         out.add(
           TodayTeachingLesson(
@@ -1976,19 +2255,30 @@ class ClassRepository {
             startTime: p?.startTime ?? '',
             endTime: p?.endTime ?? '',
             classTitle: cls.displayTitle,
+            classId: cls.id,
+            weekday: w,
+            period: period,
           ),
         );
       }
     }
 
     out.sort((a, b) {
+      final w = a.weekday.compareTo(b.weekday);
+      if (w != 0) return w;
       final as = a.startTime;
       final bs = b.startTime;
       if (as.isNotEmpty && bs.isNotEmpty) return as.compareTo(bs);
-      return a.periodLabel.compareTo(b.periodLabel);
+      return a.period.compareTo(b.period);
     });
     return out;
   }
+
+  Future<List<TodayTeachingLesson>> collectTodayTeachingLessons() =>
+      collectTeachingLessons(
+        mineOnly: true,
+        weekday: DateTime.now().weekday,
+      );
 
   // ── Backup / restore ──────────────────────────────────────────────────────
 
@@ -2089,6 +2379,7 @@ class ClassRepository {
       'countdowns': await db.query('countdowns'),
       'fund_records': await db.query('fund_records'),
       'work_logs': await db.query('work_logs'),
+      'work_log_attachments': await db.query('work_log_attachments'),
       'exams': await db.query('exams'),
       'exam_scores': await db.query('exam_scores'),
       'semesters': await db.query('semesters'),
@@ -2124,6 +2415,7 @@ class ClassRepository {
       'settlements',
       'countdowns',
       'fund_records',
+      'work_log_attachments',
       'work_logs',
       'exam_scores',
       'exams',
@@ -2188,6 +2480,10 @@ class ClassRepository {
       await insertAll('countdowns', data['countdowns'] as List?);
       await insertAll('fund_records', data['fund_records'] as List?);
       await insertAll('work_logs', data['work_logs'] as List?);
+      await insertAll(
+        'work_log_attachments',
+        data['work_log_attachments'] as List?,
+      );
       await insertAll('exams', data['exams'] as List?);
       await insertAll('exam_scores', data['exam_scores'] as List?);
       await insertAll('semesters', data['semesters'] as List?);
@@ -2257,6 +2553,10 @@ class ClassRepository {
       await insertScoped('countdowns', data['countdowns'] as List?);
       await insertScoped('fund_records', data['fund_records'] as List?);
       await insertScoped('work_logs', data['work_logs'] as List?);
+      await insertScoped(
+        'work_log_attachments',
+        data['work_log_attachments'] as List?,
+      );
       await insertScoped('exams', data['exams'] as List?);
       for (final raw in data['exam_scores'] as List? ?? []) {
         await db.insert(
@@ -2454,6 +2754,7 @@ class ClassRepository {
         );
       }
     }
+    await _seedDemoWorkLogAttachmentsIfEmpty();
 
     if ((await getNotes()).isEmpty) {
       await upsertNote(
@@ -2692,6 +2993,79 @@ class ClassRepository {
     );
   }
 
+  /// 工作留痕尚无附件时补演示照片/语音（已有附件不覆盖）
+  Future<void> _seedDemoWorkLogAttachmentsIfEmpty() async {
+    // 清理早期无效演示视频（空壳 mp4 会导致只能转发到 QQ）
+    for (final a in await getAllWorkLogAttachments()) {
+      if (a.kind == WorkLogMediaKind.video &&
+          (a.fileName == '班会片段.mp4' || a.sizeBytes < 256)) {
+        await deleteWorkLogAttachment(a);
+      }
+    }
+    if ((await getAllWorkLogAttachments()).isNotEmpty) return;
+    final logs = await getWorkLogs();
+    if (logs.isEmpty) return;
+
+    WorkLog? byTitle(String title) {
+      for (final w in logs) {
+        if (w.title == title) return w;
+      }
+      return null;
+    }
+
+    final meeting = byTitle('诚信考试主题班会') ?? logs[0];
+    final safety = byTitle('防溺水安全教育') ??
+        (logs.length > 1 ? logs[1] : logs[0]);
+    final talk = byTitle('与班长谈值日落实') ??
+        (logs.length > 2 ? logs[2] : logs[0]);
+
+    Future<void> attach({
+      required WorkLog log,
+      required WorkLogMediaKind kind,
+      required String fileName,
+      required Uint8List bytes,
+    }) async {
+      final temp = await WorkLogDemoMedia.writeTemp(
+        fileName: fileName,
+        bytes: bytes,
+      );
+      await importWorkLogAttachment(
+        workLogId: log.id,
+        kind: kind,
+        sourcePath: temp.path,
+        originalName: fileName,
+      );
+    }
+
+    final photo = await WorkLogDemoMedia.photoBytes();
+    final audio = WorkLogDemoMedia.audioBytes();
+
+    await attach(
+      log: meeting,
+      kind: WorkLogMediaKind.photo,
+      fileName: '班会现场照片.png',
+      bytes: photo,
+    );
+    await attach(
+      log: talk,
+      kind: WorkLogMediaKind.audio,
+      fileName: '谈话录音.wav',
+      bytes: audio,
+    );
+    await attach(
+      log: safety,
+      kind: WorkLogMediaKind.photo,
+      fileName: '安全教育展板.png',
+      bytes: photo,
+    );
+    await attach(
+      log: safety,
+      kind: WorkLogMediaKind.audio,
+      fileName: '宣讲录音.wav',
+      bytes: audio,
+    );
+  }
+
   /// 各班级尚无课时时填充演示授课进度（不覆盖已有数据）
   Future<void> seedDemoLessonsIfEmpty() async {
     String ymd(DateTime t) =>
@@ -2759,3 +3133,4 @@ class ClassRepository {
     }
   }
 }
+

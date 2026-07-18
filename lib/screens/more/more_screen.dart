@@ -8,7 +8,9 @@ import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/providers/theme_controller.dart';
 import 'package:smart_class/legal/legal_texts.dart';
+import 'package:smart_class/providers/ai_settings_controller.dart';
 import 'package:smart_class/screens/legal/legal_doc_screen.dart';
+import 'package:smart_class/screens/more/ai_settings_screen.dart';
 import 'package:smart_class/screens/salary/salary_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
@@ -25,6 +27,7 @@ class MoreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
     final themeCtrl = context.watch<ThemeController>();
+    final aiCtrl = context.watch<AiSettingsController>();
     final current = ctrl.currentClass;
 
     return Scaffold(
@@ -67,6 +70,14 @@ class MoreScreen extends StatelessWidget {
                       ? const PaddiThemePreview()
                       : null,
                   onTap: () => _pickTheme(context),
+                ),
+                GroupedTile(
+                  leading: Icon(AppIcons.sparkles, color: AppTheme.blue, size: 22),
+                  title: 'AI 助手',
+                  subtitle: aiCtrl.hasApiKey
+                      ? 'DeepSeek · ${aiCtrl.maskedApiKey}'
+                      : '配置 DeepSeek，润色工作留痕',
+                  onTap: () => _push(context, const AiSettingsScreen()),
                 ),
               ],
             ),

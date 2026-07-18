@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
@@ -281,11 +283,13 @@ class SearchField extends StatelessWidget {
     required this.controller,
     this.hint = '搜索',
     this.onChanged,
+    this.focusNode,
   });
 
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -293,6 +297,7 @@ class SearchField extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
@@ -365,20 +370,36 @@ class ListEmptyPlaceholder extends StatelessWidget {
 }
 
 class StudentAvatar extends StatelessWidget {
-  const StudentAvatar({super.key, required this.name, this.size = 36});
+  const StudentAvatar({
+    super.key,
+    required this.name,
+    this.gender = '',
+    this.size = 36,
+  });
 
   final String name;
+  final String gender;
   final double size;
 
   @override
   Widget build(BuildContext context) {
     final letter = name.isEmpty ? '?' : name.substring(0, 1);
+    final bg = switch (gender) {
+      '男' => const Color(0xFFD6EBFF),
+      '女' => const Color(0xFFFFD6E0),
+      _ => AppTheme.fill,
+    };
+    final fg = switch (gender) {
+      '男' => const Color(0xFF007AFF),
+      '女' => const Color(0xFFFF2D55),
+      _ => AppTheme.secondaryLabel.withValues(alpha: 0.7),
+    };
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: AppTheme.fill,
+        color: bg,
         shape: BoxShape.circle,
       ),
       child: Text(
@@ -386,7 +407,7 @@ class StudentAvatar extends StatelessWidget {
         style: TextStyle(
           fontSize: size * 0.38,
           fontWeight: FontWeight.w600,
-          color: AppTheme.secondaryLabel.withValues(alpha: 0.7),
+          color: fg,
         ),
       ),
     );
@@ -470,6 +491,106 @@ class RankBadge extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: AppTheme.secondaryLabel,
         ),
+      ),
+    );
+  }
+}
+
+/// Cupertino 风格确认删除
+Future<bool> confirmAppleDelete(
+  BuildContext context, {
+  required String title,
+  String? message,
+}) async {
+  final ok = await showCupertinoDialog<bool>(
+    context: context,
+    builder: (ctx) => CupertinoAlertDialog(
+      title: Text(title),
+      content: message == null ? null : Text(message),
+      actions: [
+        CupertinoDialogAction(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('取消'),
+        ),
+        CupertinoDialogAction(
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('删除'),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
+/// iOS 列表左滑：露出圆角「删除」按钮，须点按才删；不可滑动即删。
+/// 用 [ClipRect] 裁切左滑内容，避免标题飘出卡片。
+class AppleDeleteSlidable extends StatelessWidget {
+  const AppleDeleteSlidable({
+    super.key,
+    required this.itemKey,
+    required this.child,
+    required this.onDelete,
+    this.confirmTitle,
+    this.confirmMessage,
+    this.groupTag = 'apple-delete',
+  });
+
+  final Key itemKey;
+  final Widget child;
+  final Future<void> Function() onDelete;
+  final String? confirmTitle;
+  final String? confirmMessage;
+  final Object? groupTag;
+
+  Future<void> _handleDelete(BuildContext ctx) async {
+    if (confirmTitle != null) {
+      final ok = await confirmAppleDelete(
+        ctx,
+        title: confirmTitle!,
+        message: confirmMessage,
+      );
+      if (!ok) return;
+    }
+    await onDelete();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: Slidable(
+        key: itemKey,
+        groupTag: groupTag,
+        endActionPane: ActionPane(
+          motion: const BehindMotion(),
+          extentRatio: 0.2,
+          dragDismissible: false,
+          children: [
+            CustomSlidableAction(
+              onPressed: _handleDelete,
+              backgroundColor: Colors.transparent,
+              padding: const EdgeInsets.fromLTRB(6, 8, 12, 8),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppTheme.destructive,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Center(
+                  child: Text(
+                    '删除',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        child: child,
       ),
     );
   }

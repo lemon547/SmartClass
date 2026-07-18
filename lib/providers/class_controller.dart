@@ -9,10 +9,12 @@ import 'package:smart_class/data/class_repository.dart';
 import 'package:smart_class/features/class_features.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/services/batch_excels.dart';
+import 'package:smart_class/services/ai_timetable_import.dart';
 import 'package:smart_class/services/exam_score_excel.dart';
 import 'package:smart_class/services/excel_batch_helper.dart';
 import 'package:smart_class/services/semester_report_excel.dart';
 import 'package:smart_class/services/student_roster_excel.dart';
+import 'package:smart_class/services/work_log_export_pack.dart';
 import 'package:uuid/uuid.dart';
 
 class StudentImportResult {
@@ -41,6 +43,49 @@ class ExamScoreImportResult {
   final List<String> warnings;
 }
 
+enum ExamScoreMatchStatus {
+  matchedByNo,
+  matchedByName,
+  ambiguousName,
+  unmatched,
+}
+
+class ExamScoreMatchPreview {
+  const ExamScoreMatchPreview({
+    required this.row,
+    required this.status,
+    this.student,
+  });
+
+  final ExamScoreRow row;
+  final Student? student;
+  final ExamScoreMatchStatus status;
+
+  bool get isMatched =>
+      status == ExamScoreMatchStatus.matchedByNo ||
+      status == ExamScoreMatchStatus.matchedByName;
+}
+
+enum TimetableMatchStatus {
+  ok,
+  classNotFound,
+  noCurrentClass,
+}
+
+class TimetableMatchPreview {
+  const TimetableMatchPreview({
+    required this.row,
+    required this.status,
+    this.matchedClass,
+  });
+
+  final AiTimetableSlotRow row;
+  final ManagedClass? matchedClass;
+  final TimetableMatchStatus status;
+
+  bool get isOk => status == TimetableMatchStatus.ok && matchedClass != null;
+}
+
 class ClassController extends ChangeNotifier {
   ClassController(this._repo);
 
@@ -60,6 +105,12 @@ class ClassController extends ChangeNotifier {
   List<CountdownItem> countdowns = [];
   List<FundRecord> fundRecords = [];
   List<WorkLog> workLogs = [];
+  Map<String, List<WorkLogAttachment>> workLogAttachmentsByLog = {};
+  List<LeaveRecord> leaveRecords = [];
+  List<DisciplineRecord> disciplineRecords = [];
+  List<(Student, int)> deductionAlerts = [];
+  bool deductionReminderEnabled = true;
+  int deductionReminderThreshold = 10;
   List<LessonUnit> lessonUnits = [];
   Map<String, List<LessonFile>> lessonFilesByUnit = {};
   Map<String, List<ExamFile>> examFilesByExam = {};
@@ -78,8 +129,14 @@ class ClassController extends ChangeNotifier {
   List<String> teachingSubjects = [];
   List<SalaryRecord> salaryRecords = [];
   List<TeacherTodo> todos = [];
-  /// 跨班级的今日授课（今日页用）
+  /// 跨班级的今日授课（「我的授课」）
   List<TodayTeachingLesson> allTodayLessons = [];
+  /// 当前班今日全部课程（「本班课表」）
+  List<TodayTeachingLesson> todayClassLessons = [];
+  /// 本周我的授课（教师课表 · 我的）
+  List<TodayTeachingLesson> weekMyLessons = [];
+  /// 本周当前班全部课程（教师课表 · 班级）
+  List<TodayTeachingLesson> weekClassLessons = [];
   String selectedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
   bool loading = true;
   /// 首屏必需数据已就绪（可离开启动页）
@@ -135,6 +192,11 @@ class ClassController extends ChangeNotifier {
 
   Map<String, AttendanceStatus> get attendanceMap => {
         for (final r in selectedAttendance) r.studentId: r.status,
+      };
+
+  Map<String, String> get attendanceRemarkMap => {
+        for (final r in selectedAttendance)
+          if (r.remark.trim().isNotEmpty) r.studentId: r.remark.trim(),
       };
 
   List<Student> get rankedByPoints {
@@ -253,7 +315,7 @@ class ClassController extends ChangeNotifier {
       homework = await _repo.getHomework(date: selectedDate);
       selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
       todos = await _repo.getTodos();
-      allTodayLessons = await _repo.collectTodayTeachingLessons();
+      await _refreshScheduleCaches();
 
       essentialReady = true;
       loading = false;
@@ -364,6 +426,12 @@ class ClassController extends ChangeNotifier {
       settlements = await _repo.getSettlements();
       fundRecords = await _repo.getFundRecords();
       workLogs = await _repo.getWorkLogs();
+      await _reloadWorkLogAttachments();
+      leaveRecords = await _repo.getLeaveRecords();
+      disciplineRecords = await _repo.getDisciplineRecords();
+      deductionReminderEnabled = _repo.deductionReminderEnabled;
+      deductionReminderThreshold = _repo.deductionReminderThreshold;
+      deductionAlerts = await _repo.studentsOverDeductionThreshold();
       lessonUnits = await _repo.getAllLessonUnits();
       await _repo.seedDemoLessonsIfEmpty();
       lessonUnits = await _repo.getAllLessonUnits();
@@ -554,13 +622,24 @@ class ClassController extends ChangeNotifier {
     String? fileName,
   }) async {
     final parsed = StudentRosterExcel.parseBytes(bytes, fileName: fileName);
-    if (parsed.rows.isEmpty) {
+    return importStudentRosterRows(
+      parsed.rows,
+      extraWarnings: parsed.warnings,
+    );
+  }
+
+  /// 将已解析的学生行写入当前班级（学号匹配则更新）。
+  Future<StudentImportResult> importStudentRosterRows(
+    List<StudentRosterRow> rows, {
+    List<String> extraWarnings = const [],
+  }) async {
+    if (rows.isEmpty) {
       return StudentImportResult(
         added: 0,
         updated: 0,
-        warnings: parsed.warnings.isEmpty
+        warnings: extraWarnings.isEmpty
             ? const ['没有可导入的数据']
-            : parsed.warnings,
+            : extraWarnings,
       );
     }
 
@@ -571,13 +650,15 @@ class ClassController extends ChangeNotifier {
         if (s.studentNo.trim().isNotEmpty) s.studentNo.trim(): s,
     };
 
-    for (final row in parsed.rows) {
+    for (final row in rows) {
+      final name = row.name.trim();
+      if (name.isEmpty) continue;
       final no = row.studentNo.trim();
       final existing = no.isNotEmpty ? byNo[no] : null;
       if (existing != null) {
         await _repo.upsertStudent(
           existing.copyWith(
-            name: row.name,
+            name: name,
             studentNo: no,
             gender: row.gender,
             phone: row.phone,
@@ -592,7 +673,7 @@ class ClassController extends ChangeNotifier {
       } else {
         final student = Student(
           id: _uuid.v4(),
-          name: row.name,
+          name: name,
           studentNo: no,
           gender: row.gender,
           phone: row.phone,
@@ -613,7 +694,7 @@ class ClassController extends ChangeNotifier {
     return StudentImportResult(
       added: added,
       updated: updated,
-      warnings: parsed.warnings,
+      warnings: extraWarnings,
     );
   }
 
@@ -764,6 +845,7 @@ class ClassController extends ChangeNotifier {
       imported++;
     }
     workLogs = await _repo.getWorkLogs();
+    await _reloadWorkLogAttachments();
     notifyListeners();
     return BatchImportResult(imported: imported, warnings: parsed.warnings);
   }
@@ -882,6 +964,164 @@ class ClassController extends ChangeNotifier {
     );
   }
 
+  Future<String> exportTeacherTimetableTemplateFile() =>
+      _writeExcelTemplate('教师课表导入示例.xlsx', TeacherTimetableExcel.template());
+
+  Future<BatchImportResult> importTeacherTimetableFromBytes(
+    Uint8List bytes,
+  ) async {
+    final parsed = TeacherTimetableExcel.parse(bytes);
+    return importAiTimetableRows(
+      parsed.rows
+          .map(
+            (r) => AiTimetableSlotRow(
+              weekday: r.weekday,
+              period: r.period,
+              subject: r.subject,
+              className: r.className,
+            ),
+          )
+          .toList(),
+      markAsMine: true,
+      extraWarnings: parsed.warnings,
+    );
+  }
+
+  /// AI / 标准模板共用的课表行写入。
+  /// [markAsMine] true：跨班写入并标记本人授课；false：写入当前班级格子。
+  Future<BatchImportResult> importAiTimetableRows(
+    List<AiTimetableSlotRow> rows, {
+    bool markAsMine = false,
+    String? fallbackClassId,
+    List<String> extraWarnings = const [],
+  }) async {
+    if (rows.isEmpty) {
+      return BatchImportResult(
+        imported: 0,
+        skipped: 0,
+        warnings: extraWarnings.isEmpty
+            ? const ['没有可导入的数据']
+            : extraWarnings,
+      );
+    }
+
+    var imported = 0;
+    var skipped = 0;
+    final warnings = [...extraWarnings];
+    final currentId = fallbackClassId ?? currentClass?.id;
+
+    for (final row in rows) {
+      final sub = row.subject.trim();
+      if (sub.isEmpty) {
+        skipped++;
+        continue;
+      }
+      if (row.weekday < 1 ||
+          row.weekday > 7 ||
+          row.period < 1 ||
+          row.period > 20) {
+        skipped++;
+        warnings.add('无效节次：周${row.weekday} 第${row.period}节');
+        continue;
+      }
+
+      String? classId;
+      if (row.className.trim().isNotEmpty) {
+        final cls = matchClassByName(row.className);
+        if (cls == null) {
+          skipped++;
+          warnings.add('未找到班级：${row.className}');
+          continue;
+        }
+        classId = cls.id;
+      } else {
+        classId = currentId;
+      }
+      if (classId == null) {
+        skipped++;
+        warnings.add('未指定班级，且当前未选班级');
+        continue;
+      }
+
+      if (markAsMine) {
+        await addMyTeachingLesson(
+          classId: classId,
+          weekday: row.weekday,
+          period: row.period,
+          subject: sub,
+        );
+      } else {
+        await _repo.upsertTimetableSlotForClass(
+          classId,
+          TimetableSlot(
+            id: _uuid.v4(),
+            weekday: row.weekday,
+            period: row.period,
+            subject: sub,
+          ),
+        );
+      }
+      imported++;
+    }
+
+    if (currentClass != null) {
+      timetable = await _repo.getTimetable();
+      teachingSubjects = await _repo.getTeachingSubjects();
+    }
+    await _refreshScheduleCaches();
+    notifyListeners();
+
+    return BatchImportResult(
+      imported: imported,
+      skipped: skipped,
+      warnings: warnings,
+    );
+  }
+
+  List<TimetableMatchPreview> previewTimetableRows(
+    List<AiTimetableSlotRow> rows, {
+    String? fallbackClassId,
+  }) {
+    final currentId = fallbackClassId ?? currentClass?.id;
+    ManagedClass? classById(String? id) {
+      if (id == null) return null;
+      for (final c in classes) {
+        if (c.id == id) return c;
+      }
+      return null;
+    }
+
+    final out = <TimetableMatchPreview>[];
+    for (final row in rows) {
+      ManagedClass? cls;
+      var status = TimetableMatchStatus.ok;
+      if (row.className.trim().isNotEmpty) {
+        cls = matchClassByName(row.className);
+        if (cls == null) status = TimetableMatchStatus.classNotFound;
+      } else {
+        cls = classById(currentId);
+        if (cls == null) status = TimetableMatchStatus.noCurrentClass;
+      }
+      out.add(
+        TimetableMatchPreview(row: row, matchedClass: cls, status: status),
+      );
+    }
+    return out;
+  }
+
+  ManagedClass? matchClassByName(String raw) {
+    final q = raw.trim().replaceAll(' ', '').replaceAll('·', '');
+    if (q.isEmpty) return null;
+    for (final c in classes) {
+      final title = c.displayTitle.replaceAll(' ', '').replaceAll('·', '');
+      final name = c.name.trim().replaceAll(' ', '');
+      if (title == q || name == q || title.contains(q) || q.contains(name)) {
+        return c;
+      }
+    }
+    return null;
+  }
+
   Future<void> removeStudent(String id) async {
     await _repo.deleteStudent(id);
     await load();
@@ -890,24 +1130,42 @@ class ClassController extends ChangeNotifier {
   Future<void> markAttendance(
     String studentId,
     AttendanceStatus status, {
-    String remark = '',
+    String? remark,
   }) async {
+    var nextRemark = remark;
+    if (nextRemark == null) {
+      for (final r in selectedAttendance) {
+        if (r.studentId == studentId) {
+          nextRemark = r.remark;
+          break;
+        }
+      }
+    }
     await _repo.setAttendance(
       studentId: studentId,
       date: selectedDate,
       status: status,
-      remark: remark,
+      remark: (nextRemark ?? '').trim(),
     );
     selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
     notifyListeners();
   }
 
+  Future<void> setAttendanceRemark(String studentId, String remark) async {
+    final status = attendanceMap[studentId] ?? AttendanceStatus.present;
+    await markAttendance(studentId, status, remark: remark.trim());
+  }
+
   Future<void> markAllPresent() async {
+    final keep = {
+      for (final r in selectedAttendance) r.studentId: r.remark,
+    };
     for (final s in students) {
       await _repo.setAttendance(
         studentId: s.id,
         date: selectedDate,
         status: AttendanceStatus.present,
+        remark: keep[s.id] ?? '',
       );
     }
     selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
@@ -1334,6 +1592,17 @@ class ClassController extends ChangeNotifier {
         classId: classId ?? classIdOfLesson(file.unitId),
       );
 
+  Future<void> _reloadWorkLogAttachments() async {
+    final all = await _repo.getAllWorkLogAttachments();
+    workLogAttachmentsByLog = {};
+    for (final a in all) {
+      workLogAttachmentsByLog.putIfAbsent(a.workLogId, () => []).add(a);
+    }
+  }
+
+  List<WorkLogAttachment> attachmentsOfWorkLog(String workLogId) =>
+      workLogAttachmentsByLog[workLogId] ?? const [];
+
   Future<void> saveWorkLog({
     String? id,
     required WorkLogCategory category,
@@ -1364,13 +1633,189 @@ class ClassController extends ChangeNotifier {
       ),
     );
     workLogs = await _repo.getWorkLogs();
+    await _reloadWorkLogAttachments();
     notifyListeners();
   }
+
+  Future<WorkLogAttachment?> attachWorkLogMedia({
+    required String workLogId,
+    required WorkLogMediaKind kind,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    final item = await _repo.importWorkLogAttachment(
+      workLogId: workLogId,
+      kind: kind,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    await _reloadWorkLogAttachments();
+    notifyListeners();
+    return item;
+  }
+
+  Future<void> deleteWorkLogAttachment(WorkLogAttachment item) async {
+    await _repo.deleteWorkLogAttachment(item);
+    await _reloadWorkLogAttachments();
+    notifyListeners();
+  }
+
+  Future<String> workLogAttachmentPath(WorkLogAttachment item) =>
+      _repo.workLogAttachmentAbsolutePath(item);
 
   Future<void> deleteWorkLog(String id) async {
     await _repo.deleteWorkLog(id);
     workLogs = await _repo.getWorkLogs();
+    await _reloadWorkLogAttachments();
     notifyListeners();
+  }
+
+  int get todayLeaveCount {
+    final d = todayKey;
+    return leaveRecords.where((e) => e.date == d).length;
+  }
+
+  int get todayDisciplineCount {
+    final d = todayKey;
+    return disciplineRecords.where((e) => e.date == d).length;
+  }
+
+  int get todayPointsDelta {
+    final d = todayKey;
+    var sum = 0;
+    for (final r in pointRecords) {
+      final key = DateFormat('yyyy-MM-dd').format(r.createdAt);
+      if (key == d) sum += r.delta;
+    }
+    return sum;
+  }
+
+  int talkLogCountFor(String studentId) {
+    var n = 0;
+    for (final w in workLogs) {
+      if (w.category != WorkLogCategory.studentTalk) continue;
+      if (w.studentIdList.contains(studentId)) n++;
+    }
+    return n;
+  }
+
+  Future<void> refreshDailyOps() async {
+    leaveRecords = await _repo.getLeaveRecords();
+    disciplineRecords = await _repo.getDisciplineRecords();
+    deductionReminderEnabled = _repo.deductionReminderEnabled;
+    deductionReminderThreshold = _repo.deductionReminderThreshold;
+    deductionAlerts = await _repo.studentsOverDeductionThreshold();
+    pointRecords = await _repo.getPointRecords(limit: 100);
+    notifyListeners();
+  }
+
+  Future<void> setDeductionReminder({
+    bool? enabled,
+    int? threshold,
+  }) async {
+    if (enabled != null) {
+      await _repo.setDeductionReminderEnabled(enabled);
+      deductionReminderEnabled = enabled;
+    }
+    if (threshold != null) {
+      final t = threshold.clamp(1, 999);
+      await _repo.setDeductionReminderThreshold(t);
+      deductionReminderThreshold = t;
+    }
+    try {
+      deductionAlerts = await _repo.studentsOverDeductionThreshold();
+    } catch (_) {
+      deductionAlerts = [];
+    }
+    notifyListeners();
+  }
+
+  Future<void> saveLeaveRecord({
+    required String studentId,
+    required String date,
+    String reason = '',
+    String pickup = '',
+  }) async {
+    await _repo.upsertLeaveRecord(
+      LeaveRecord(
+        id: _uuid.v4(),
+        studentId: studentId,
+        date: date,
+        reason: reason.trim(),
+        pickup: pickup.trim(),
+        createdAt: DateTime.now(),
+      ),
+    );
+    await _repo.setAttendance(
+      studentId: studentId,
+      date: date,
+      status: AttendanceStatus.leave,
+      remark: reason.trim(),
+    );
+    if (selectedDate == date) {
+      selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
+    }
+    await refreshDailyOps();
+  }
+
+  Future<void> saveDisciplineRecord({
+    required String studentId,
+    required String date,
+    required String title,
+    String action = '',
+    int pointsDelta = 0,
+  }) async {
+    final t = title.trim();
+    if (t.isEmpty) return;
+    await _repo.upsertDisciplineRecord(
+      DisciplineRecord(
+        id: _uuid.v4(),
+        studentId: studentId,
+        date: date,
+        title: t,
+        action: action.trim(),
+        pointsDelta: pointsDelta,
+        createdAt: DateTime.now(),
+      ),
+    );
+    if (pointsDelta != 0) {
+      await _repo.addPoints(
+        studentId: studentId,
+        delta: pointsDelta,
+        reason: t,
+      );
+      students = await _repo.getStudents();
+      await _refreshPeriodDeltas();
+    }
+    await refreshDailyOps();
+  }
+
+  /// 导出工作留痕纯 Excel（不含附件列）。
+  Future<String> exportWorkLogsExcelFile() async {
+    final bytes = WorkLogBatchExcel.exportRows(workLogs);
+    final title = currentClass?.displayTitle ?? '班级';
+    final safe = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, '工作留痕_${safe}_$stamp.xlsx'));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  /// 导出工作留痕 ZIP：纯 Excel + 附件原文件（按记录分子文件夹）。
+  Future<String> exportWorkLogsReportFile() async {
+    final bytes = await WorkLogExportPack.buildZip(
+      logs: workLogs,
+      attachmentsByLog: workLogAttachmentsByLog,
+      absolutePathOf: _repo.workLogAttachmentAbsolutePath,
+    );
+    final title = currentClass?.displayTitle ?? '班级';
+    final safe = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, '工作留痕_${safe}_$stamp.zip'));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
   }
 
   List<Exam> examsOf(String? category) {
@@ -1543,13 +1988,34 @@ class ClassController extends ChangeNotifier {
       subjects: exam.subjects,
       fileName: fileName,
     );
-    if (parsed.rows.isEmpty) {
+    return importExamScoreRows(
+      examId,
+      parsed.rows,
+      extraWarnings: parsed.warnings,
+    );
+  }
+
+  /// 将已解析的成绩行写入考试（学号优先，其次唯一姓名）。
+  Future<ExamScoreImportResult> importExamScoreRows(
+    String examId,
+    List<ExamScoreRow> rows, {
+    List<String> extraWarnings = const [],
+  }) async {
+    final exam = examById(examId);
+    if (exam == null) {
+      return const ExamScoreImportResult(
+        matched: 0,
+        skipped: 0,
+        warnings: ['考试不存在'],
+      );
+    }
+    if (rows.isEmpty) {
       return ExamScoreImportResult(
         matched: 0,
         skipped: 0,
-        warnings: parsed.warnings.isEmpty
+        warnings: extraWarnings.isEmpty
             ? const ['没有可导入的数据']
-            : parsed.warnings,
+            : extraWarnings,
       );
     }
 
@@ -1564,12 +2030,12 @@ class ClassController extends ChangeNotifier {
 
     var matched = 0;
     var skipped = 0;
-    final warnings = [...parsed.warnings];
+    final warnings = [...extraWarnings];
     final existingByStudent = <String, String>{
       for (final s in scoresOfExam(examId)) s.studentId: s.id,
     };
 
-    for (final row in parsed.rows) {
+    for (final row in rows) {
       Student? stu;
       final no = row.studentNo.trim();
       if (no.isNotEmpty) stu = byNo[no];
@@ -1589,13 +2055,13 @@ class ClassController extends ChangeNotifier {
         continue;
       }
 
-      // 合并：保留考试科目集合内的分数
       final scores = <String, double>{};
       for (final sub in exam.subjects) {
         final v = row.scores[sub];
         if (v != null) scores[sub] = v;
       }
       if (scores.isEmpty) {
+        // 表里科目名与考试不完全一致时，仍写入；并扩科目列表
         scores.addAll(row.scores);
       }
       final id = existingByStudent[stu.id] ?? _uuid.v4();
@@ -1612,6 +2078,26 @@ class ClassController extends ChangeNotifier {
       matched++;
     }
 
+    // 若导入带出了新科目，合并进考试
+    final mergedSubjects = [...exam.subjects];
+    for (final row in rows) {
+      for (final s in row.scores.keys) {
+        if (!mergedSubjects.contains(s)) mergedSubjects.add(s);
+      }
+    }
+    if (mergedSubjects.length != exam.subjects.length) {
+      await saveExam(
+        id: exam.id,
+        title: exam.title,
+        category: exam.category,
+        examDate: exam.examDate,
+        subjects: mergedSubjects,
+        fullScore: exam.fullScore,
+        passScore: exam.passScore,
+        note: exam.note,
+      );
+    }
+
     examScoresByExam[examId] = await _repo.getExamScores(examId);
     notifyListeners();
 
@@ -1620,6 +2106,39 @@ class ClassController extends ChangeNotifier {
       skipped: skipped,
       warnings: warnings,
     );
+  }
+
+  /// 预览匹配结果（不写库）。
+  List<ExamScoreMatchPreview> previewExamScoreRows(List<ExamScoreRow> rows) {
+    final byNo = <String, Student>{
+      for (final s in students)
+        if (s.studentNo.trim().isNotEmpty) s.studentNo.trim(): s,
+    };
+    final byName = <String, List<Student>>{};
+    for (final s in students) {
+      byName.putIfAbsent(s.name, () => []).add(s);
+    }
+
+    final out = <ExamScoreMatchPreview>[];
+    for (final row in rows) {
+      Student? stu;
+      var status = ExamScoreMatchStatus.unmatched;
+      final no = row.studentNo.trim();
+      if (no.isNotEmpty) stu = byNo[no];
+      if (stu != null) {
+        status = ExamScoreMatchStatus.matchedByNo;
+      } else {
+        final list = byName[row.name] ?? const [];
+        if (list.length == 1) {
+          stu = list.first;
+          status = ExamScoreMatchStatus.matchedByName;
+        } else if (list.length > 1) {
+          status = ExamScoreMatchStatus.ambiguousName;
+        }
+      }
+      out.add(ExamScoreMatchPreview(row: row, student: stu, status: status));
+    }
+    return out;
   }
 
   /// 单科或总分分析
@@ -1756,9 +2275,10 @@ class ClassController extends ChangeNotifier {
   Future<void> setTimetableSlot({
     required int weekday,
     required int period,
-    required String subject,
+    String? subject,
   }) async {
-    if (subject.trim().isEmpty) {
+    final sub = subject?.trim() ?? '';
+    if (sub.isEmpty) {
       await _repo.clearTimetableSlot(weekday, period);
     } else {
       await _repo.upsertTimetableSlot(
@@ -1766,11 +2286,52 @@ class ClassController extends ChangeNotifier {
           id: _uuid.v4(),
           weekday: weekday,
           period: period,
-          subject: subject.trim(),
+          subject: sub,
         ),
       );
     }
     timetable = await _repo.getTimetable();
+    await _refreshScheduleCaches();
+    notifyListeners();
+  }
+
+  /// 向指定班级写入一节课，并标记为本人授课科目
+  Future<void> addMyTeachingLesson({
+    required String classId,
+    required int weekday,
+    required int period,
+    required String subject,
+  }) async {
+    final sub = subject.trim();
+    if (sub.isEmpty) return;
+    await _repo.upsertTimetableSlotForClass(
+      classId,
+      TimetableSlot(
+        id: _uuid.v4(),
+        weekday: weekday,
+        period: period,
+        subject: sub,
+      ),
+    );
+    await _repo.setTeachingSubjectsForClass(classId, [sub]);
+    if (classId == currentClass?.id) {
+      timetable = await _repo.getTimetable();
+      teachingSubjects = await _repo.getTeachingSubjects();
+    }
+    await _refreshScheduleCaches();
+    notifyListeners();
+  }
+
+  Future<void> clearMyTeachingLesson({
+    required String classId,
+    required int weekday,
+    required int period,
+  }) async {
+    await _repo.clearTimetableSlotForClass(classId, weekday, period);
+    if (classId == currentClass?.id) {
+      timetable = await _repo.getTimetable();
+    }
+    await _refreshScheduleCaches();
     notifyListeners();
   }
 
@@ -1801,6 +2362,7 @@ class ClassController extends ChangeNotifier {
     if (t.isEmpty || t == teachingSubject) return;
     await _repo.setTeachingSubjects([t]);
     teachingSubjects = await _repo.getTeachingSubjects();
+    await _refreshScheduleCaches();
     notifyListeners();
   }
 
@@ -1808,6 +2370,7 @@ class ClassController extends ChangeNotifier {
     if (teachingSubject == null) return;
     await _repo.setTeachingSubjects(const []);
     teachingSubjects = await _repo.getTeachingSubjects();
+    await _refreshScheduleCaches();
     notifyListeners();
   }
 
@@ -1832,28 +2395,41 @@ class ClassController extends ChangeNotifier {
     return null;
   }
 
-  /// 老师今日授课（按节次，含时间与节次名）；优先跨班汇总
+  /// 老师今日授课（「我的授课」）；优先跨班汇总
   List<TodayTeachingLesson> get todayTeachingLessons {
     if (allTodayLessons.isNotEmpty) return allTodayLessons;
+    return _localDayLessons(mineOnly: true);
+  }
+
+  /// 当前班今日全部课程（「本班课表」）
+  List<TodayTeachingLesson> get todayClassSchedule {
+    if (todayClassLessons.isNotEmpty) return todayClassLessons;
+    return _localDayLessons(mineOnly: false);
+  }
+
+  List<TodayTeachingLesson> _localDayLessons({required bool mineOnly}) {
     final w = DateTime.now().weekday;
     final slots = timetable.where((s) => s.weekday == w).toList()
       ..sort((a, b) => a.period.compareTo(b.period));
-    final title =
-        currentClass?.displayTitle ?? profile.displayTitle;
+    final title = currentClass?.displayTitle ?? profile.displayTitle;
+    final classId = currentClass?.id ?? '';
     final out = <TodayTeachingLesson>[];
     for (final s in slots) {
-      if (s.subject.trim().isEmpty || !isMyTeachingSubject(s.subject)) {
-        continue;
-      }
+      final sub = s.subject.trim();
+      if (sub.isEmpty) continue;
+      if (mineOnly && !isMyTeachingSubject(sub)) continue;
       final p = periodAt(s.period);
       out.add(
         TodayTeachingLesson(
-          subject: s.subject.trim(),
+          subject: sub,
           periodLabel: p?.displayLabel ?? '第${s.period}节',
           timeRange: p?.timeRange ?? '',
           startTime: p?.startTime ?? '',
           endTime: p?.endTime ?? '',
           classTitle: title,
+          classId: classId,
+          weekday: w,
+          period: s.period,
         ),
       );
     }
@@ -1863,6 +2439,14 @@ class ClassController extends ChangeNotifier {
   Future<void> refreshTodos() async {
     todos = await _repo.getTodos();
     notifyListeners();
+  }
+
+  /// 今日页：今天创建的 + 尚未完成的（往日未完成延续到今日）
+  List<TeacherTodo> get todayTodos {
+    return [
+      for (final t in todos)
+        if (t.isCreatedToday || !t.done) t,
+    ];
   }
 
   Future<void> addTodo(String title) async {
@@ -1897,8 +2481,31 @@ class ClassController extends ChangeNotifier {
     await refreshTodos();
   }
 
+  Future<void> _refreshScheduleCaches() async {
+    final today = DateTime.now().weekday;
+    final classId = currentClass?.id;
+    allTodayLessons = await _repo.collectTeachingLessons(
+      mineOnly: true,
+      weekday: today,
+    );
+    todayClassLessons = classId == null
+        ? <TodayTeachingLesson>[]
+        : await _repo.collectTeachingLessons(
+            mineOnly: false,
+            weekday: today,
+            classId: classId,
+          );
+    weekMyLessons = await _repo.collectTeachingLessons(mineOnly: true);
+    weekClassLessons = classId == null
+        ? <TodayTeachingLesson>[]
+        : await _repo.collectTeachingLessons(
+            mineOnly: false,
+            classId: classId,
+          );
+  }
+
   Future<void> refreshAllTodayLessons() async {
-    allTodayLessons = await _repo.collectTodayTeachingLessons();
+    await _refreshScheduleCaches();
     notifyListeners();
   }
 

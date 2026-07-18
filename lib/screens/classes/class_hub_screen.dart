@@ -1,15 +1,11 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:smart_class/services/file_export.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/features/class_features.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
-import 'package:smart_class/screens/attendance/attendance_screen.dart';
 import 'package:smart_class/screens/classes/class_features_screen.dart';
 import 'package:smart_class/screens/classes/classes_screen.dart';
 import 'package:smart_class/screens/duty/duty_screen.dart';
-import 'package:smart_class/screens/grades/grades_screen.dart';
 import 'package:smart_class/screens/groups/groups_screen.dart';
 import 'package:smart_class/screens/homework/homework_screen.dart';
 import 'package:smart_class/screens/lessons/lesson_progress_screen.dart';
@@ -19,19 +15,17 @@ import 'package:smart_class/screens/points/points_screen.dart';
 import 'package:smart_class/screens/points/settlements_screen.dart';
 import 'package:smart_class/screens/reports/weekly_report_screen.dart';
 import 'package:smart_class/screens/rewards/rewards_screen.dart';
-import 'package:smart_class/screens/roll_call/roll_call_screen.dart';
 import 'package:smart_class/screens/seating/seating_screen.dart';
 import 'package:smart_class/screens/semesters/semesters_screen.dart';
 import 'package:smart_class/screens/timetable/timetable_screen.dart';
-import 'package:smart_class/screens/tools/countdown_screen.dart';
 import 'package:smart_class/screens/tools/fund_screen.dart';
-import 'package:smart_class/screens/work_logs/work_logs_screen.dart';
+import 'package:smart_class/services/file_export.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/class_switcher_sheet.dart';
 
-/// 班级中心：切换班级后展示该班全部功能入口
+/// 班级设置：只放别的 Tab 没有的本班工具
 class ClassHubScreen extends StatelessWidget {
   const ClassHubScreen({super.key});
 
@@ -40,6 +34,7 @@ class ClassHubScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
     final current = ctrl.currentClass;
     final classId = current?.id ?? '';
+    final canPop = Navigator.canPop(context);
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -47,16 +42,37 @@ class ClassHubScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 28),
           children: [
-            const SizedBox(height: 8),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 0, 20, 4),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 20, 4),
+              child: Row(
+                children: [
+                  if (canPop)
+                    IconButton(
+                      icon: const Icon(AppIcons.chevronLeft),
+                      onPressed: () => Navigator.maybePop(context),
+                    ),
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Text(
+                        '班级设置',
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(canPop ? 56 : 20, 0, 20, 0),
               child: Text(
-                '班级',
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
+                '切换班级与本班工具；考勤、点名、留痕、成绩请用底部 Tab',
+                style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
               ),
             ),
             const SizedBox(height: 12),
@@ -75,17 +91,8 @@ class ClassHubScreen extends StatelessWidget {
                     _push(context, const ClassFeaturesScreen()),
                 onManageClasses: () => _push(context, const ClassesScreen()),
               ),
-            if (ctrl.classes.isNotEmpty) ...[
-              if (ctrl.isFeatureVisible(ClassFeatureIds.points)) ...[
-                const SizedBox(height: 20),
-                _PointsHighlight(
-                  ctrl: ctrl,
-                  onRanking: () => _push(context, const PointsScreen()),
-                  onMore: () => _showPointsTools(context),
-                ),
-              ],
+            if (ctrl.classes.isNotEmpty)
               ..._buildSections(context, ctrl, classId),
-            ],
           ],
         ),
       ),
@@ -106,36 +113,43 @@ class ClassHubScreen extends StatelessWidget {
       sections.add(
         _FeatureGridSection(
           header: header,
-          items: visible
-              .map(
-                (f) => _HubGridTile(
-                  icon: f.icon,
-                  label: f.title,
-                  tint: f.tint,
-                  badge: f.badge?.call(ctrl),
-                  onTap: () => f.onTap(context, ctrl, classId),
-                ),
-              )
-              .toList(),
+          items: [
+            for (final f in visible)
+              _HubGridTile(
+                icon: f.icon,
+                label: f.title,
+                tint: f.tint,
+                badge: f.badge?.call(ctrl),
+                onTap: () => f.onTap(context, ctrl, classId),
+              ),
+          ],
         ),
       );
     }
 
-    addSection('日常教学', [
+    addSection('本班工具', [
       _HubFeature(
-        id: ClassFeatureIds.attendance,
-        title: '考勤',
-        icon: AppIcons.attendance,
-        tint: const Color(0xFF32ADE6),
-        badge: (_) => '今日登记',
-        onTap: (ctx, _, __) => _push(ctx, const AttendanceScreen()),
+        id: ClassFeatureIds.seating,
+        title: '座位表',
+        icon: AppIcons.users,
+        tint: const Color(0xFF34C759),
+        badge: (c) => '${c.profile.seatRows}×${c.profile.seatCols}',
+        onTap: (ctx, _, __) => _push(ctx, const SeatingScreen()),
       ),
       _HubFeature(
-        id: ClassFeatureIds.rollCall,
-        title: '随机点名',
-        icon: AppIcons.dices,
+        id: ClassFeatureIds.groups,
+        title: '小组',
+        icon: AppIcons.users,
         tint: AppTheme.blue,
-        onTap: (ctx, _, __) => _push(ctx, const RollCallScreen()),
+        badge: (c) => c.groupNames.isEmpty ? null : '${c.groupNames.length} 组',
+        onTap: (ctx, _, __) => _push(ctx, const GroupsScreen()),
+      ),
+      _HubFeature(
+        id: ClassFeatureIds.duty,
+        title: '值日安排',
+        icon: AppIcons.calendar,
+        tint: const Color(0xFFFF9500),
+        onTap: (ctx, _, __) => _push(ctx, const DutyScreen()),
       ),
       _HubFeature(
         id: ClassFeatureIds.homework,
@@ -145,23 +159,11 @@ class ClassHubScreen extends StatelessWidget {
         onTap: (ctx, _, __) => _push(ctx, const HomeworkScreen()),
       ),
       _HubFeature(
-        id: ClassFeatureIds.duty,
-        title: '值日安排',
-        icon: AppIcons.calendar,
-        tint: const Color(0xFFFF9500),
-        onTap: (ctx, _, __) => _push(ctx, const DutyScreen()),
-      ),
-    ]);
-
-    addSection('教学管理', [
-      _HubFeature(
-        id: ClassFeatureIds.grades,
-        title: '成绩分析',
-        icon: AppIcons.chart,
-        tint: const Color(0xFF5856D6),
-        badge: (c) =>
-            c.exams.isEmpty ? null : '${c.exams.length} 次考试',
-        onTap: (ctx, _, __) => _push(ctx, const GradesScreen()),
+        id: ClassFeatureIds.timetable,
+        title: '班级课表',
+        icon: AppIcons.grid,
+        tint: const Color(0xFF32ADE6),
+        onTap: (ctx, _, __) => _push(ctx, const TimetableScreen()),
       ),
       _HubFeature(
         id: ClassFeatureIds.lessonProgress,
@@ -172,63 +174,7 @@ class ClassHubScreen extends StatelessWidget {
           final n = c.lessonCountForClass(classId);
           return n == 0 ? null : '$n 课';
         },
-        onTap: (ctx, _, id) =>
-            _push(ctx, const LessonProgressScreen()),
-      ),
-      _HubFeature(
-        id: ClassFeatureIds.timetable,
-        title: '班级课表',
-        icon: AppIcons.grid,
-        tint: const Color(0xFF32ADE6),
-        onTap: (ctx, _, __) => _push(ctx, const TimetableScreen()),
-      ),
-      _HubFeature(
-        id: ClassFeatureIds.seating,
-        title: '座位表',
-        icon: AppIcons.users,
-        tint: const Color(0xFF34C759),
-        badge: (c) => '${c.profile.seatRows}×${c.profile.seatCols}',
-        onTap: (ctx, _, __) => _push(ctx, const SeatingScreen()),
-      ),
-      _HubFeature(
-        id: ClassFeatureIds.workLogs,
-        title: '工作留痕',
-        icon: AppIcons.notebook,
-        tint: const Color(0xFFFF9500),
-        badge: (c) =>
-            c.workLogs.isEmpty ? null : '${c.workLogs.length} 条',
-        onTap: (ctx, _, __) => _push(ctx, const WorkLogsScreen()),
-      ),
-    ]);
-
-    addSection('班级生活', [
-      _HubFeature(
-        id: ClassFeatureIds.groups,
-        title: '小组',
-        icon: AppIcons.users,
-        tint: AppTheme.blue,
-        badge: (c) =>
-            c.groupNames.isEmpty ? null : '${c.groupNames.length} 组',
-        onTap: (ctx, _, __) => _push(ctx, const GroupsScreen()),
-      ),
-      if (!ctrl.isFeatureVisible(ClassFeatureIds.points))
-        _HubFeature(
-          id: ClassFeatureIds.rewards,
-          title: '积分兑换',
-          icon: AppIcons.gift,
-          tint: const Color(0xFFFF9500),
-          onTap: (ctx, _, __) => _push(ctx, const RewardsScreen()),
-        ),
-      _HubFeature(
-        id: ClassFeatureIds.countdowns,
-        title: '倒数日',
-        icon: AppIcons.hourglass,
-        tint: const Color(0xFF5856D6),
-        badge: (c) {
-          final n = c.upcomingCountdowns.length;
-          return n == 0 ? null : '$n 个';
-        },
-        onTap: (ctx, _, __) => _push(ctx, const CountdownScreen()),
+        onTap: (ctx, _, __) => _push(ctx, const LessonProgressScreen()),
       ),
       _HubFeature(
         id: ClassFeatureIds.fund,
@@ -251,6 +197,39 @@ class ClassHubScreen extends StatelessWidget {
         icon: AppIcons.clipboardList,
         tint: AppTheme.blue,
         onTap: (ctx, _, __) => _push(ctx, const WeeklyReportScreen()),
+      ),
+    ]);
+
+    addSection('积分（本班）', [
+      _HubFeature(
+        id: ClassFeatureIds.points,
+        title: '积分排行',
+        icon: AppIcons.trophy,
+        tint: const Color(0xFFFF9500),
+        onTap: (ctx, _, __) => _push(ctx, const PointsScreen()),
+      ),
+      _HubFeature(
+        id: ClassFeatureIds.points,
+        title: '积分规则',
+        icon: AppIcons.sliders,
+        tint: AppTheme.blue,
+        onTap: (ctx, _, __) => _push(ctx, const PointRulesScreen()),
+      ),
+      _HubFeature(
+        id: ClassFeatureIds.rewards,
+        title: '积分兑换',
+        icon: AppIcons.gift,
+        tint: const Color(0xFFFF9500),
+        onTap: (ctx, _, __) => _push(ctx, const RewardsScreen()),
+      ),
+      _HubFeature(
+        id: ClassFeatureIds.settlements,
+        title: '结算记录',
+        icon: AppIcons.clock,
+        tint: const Color(0xFFAF52DE),
+        badge: (c) =>
+            c.settlements.isEmpty ? null : '${c.settlements.length} 次',
+        onTap: (ctx, _, __) => _push(ctx, const SettlementsScreen()),
       ),
     ]);
 
@@ -286,169 +265,19 @@ class ClassHubScreen extends StatelessWidget {
         },
       ),
     );
-    if (dataItems.isNotEmpty) {
-      sections.add(const SizedBox(height: 20));
-      sections.add(
-        GroupedSection(
-          header: '数据与存档',
-          footer: '学期存档与汇总导出均针对当前所选班级。',
-          children: dataItems,
-        ),
-      );
-    }
-
+    sections.add(const SizedBox(height: 20));
+    sections.add(
+      GroupedSection(
+        header: '数据与存档',
+        footer: '仅针对当前所选班级。',
+        children: dataItems,
+      ),
+    );
     return sections;
   }
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-  }
-
-  Future<void> _showPointsTools(BuildContext context) async {
-    final ctrl = context.read<ClassController>();
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    '积分工具',
-                    style: Theme.of(ctx).textTheme.titleMedium,
-                  ),
-                ),
-              ),
-              if (ctrl.isFeatureVisible(ClassFeatureIds.settlements)) ...[
-                ListTile(
-                  leading: Icon(AppIcons.trophy, color: AppTheme.blue),
-                  title: const Text('结算并重新开始'),
-                  subtitle: const Text('保存排行快照后清零'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _settle(context);
-                  },
-                ),
-                ListTile(
-                  leading: Icon(AppIcons.clock, color: AppTheme.blue),
-                  title: const Text('结算记录'),
-                  subtitle: Text(
-                    ctrl.settlements.isEmpty
-                        ? '暂无'
-                        : '${ctrl.settlements.length} 次',
-                  ),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _push(context, const SettlementsScreen());
-                  },
-                ),
-              ],
-              ListTile(
-                leading: Icon(AppIcons.download, color: AppTheme.blue),
-                title: const Text('导出积分排行'),
-                subtitle: const Text('CSV 保存到本机'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  try {
-                    final saved = await FileExport.saveGenerated(
-                      () => ctrl.exportRankingFile(),
-                      dialogTitle: '保存积分排行',
-                    );
-                    if (!context.mounted) return;
-                    FileExport.showSavedSnackBar(context, saved);
-                  } catch (e) {
-                    FileExport.showErrorSnackBar(context, e);
-                  }
-                },
-              ),
-              ListTile(
-                leading: Icon(AppIcons.trash, color: AppTheme.destructive),
-                title: Text(
-                  '清空全部积分',
-                  style: TextStyle(color: AppTheme.destructive),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _resetPoints(context);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _resetPoints(BuildContext context) async {
-    final ok = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('清空全部积分？'),
-        content: const Text('所有学生积分归零，积分记录也会删除。'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await context.read<ClassController>().resetAllPoints();
-    }
-  }
-
-  Future<void> _settle(BuildContext context) async {
-    final name = TextEditingController(
-      text: '第${context.read<ClassController>().settlements.length + 1}阶段',
-    );
-    final ok = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('结算并重新开始？'),
-        content: Column(
-          children: [
-            const SizedBox(height: 8),
-            const Text('将保存当前排行快照，然后清空积分与记录。'),
-            const SizedBox(height: 12),
-            CupertinoTextField(
-              controller: name,
-              placeholder: '阶段名称',
-            ),
-          ],
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('结算'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await context.read<ClassController>().settleAndRestart(name.text);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已结算，积分重新开始')),
-        );
-      }
-    }
   }
 }
 
@@ -510,7 +339,7 @@ class _EmptyClassCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '创建班级后即可使用考勤、成绩、授课进度等班务功能',
+                  '创建班级后，可在此管理座位、值日、班费等本班工具',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
@@ -782,183 +611,6 @@ class _HeroAction extends StatelessWidget {
   }
 }
 
-class _PointsHighlight extends StatelessWidget {
-  const _PointsHighlight({
-    required this.ctrl,
-    required this.onRanking,
-    required this.onMore,
-  });
-
-  final ClassController ctrl;
-  final VoidCallback onRanking;
-  final VoidCallback onMore;
-
-  @override
-  Widget build(BuildContext context) {
-    final top = ctrl.rankedByPoints.take(3).toList();
-    final addCount =
-        ctrl.pointPresets.where((p) => p.delta >= 0).length;
-    final subCount =
-        ctrl.pointPresets.where((p) => p.delta < 0).length;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-            child: Row(
-              children: [
-                Text(
-                  '积分',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.tertiaryLabel,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const Spacer(),
-                TextButton(
-                  onPressed: onMore,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text('更多'),
-                ),
-              ],
-            ),
-          ),
-          Material(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              children: [
-                InkWell(
-                  onTap: onRanking,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFF9500).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            AppIcons.trophy,
-                            color: Color(0xFFFF9500),
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                '积分排行',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                top.isEmpty
-                                    ? '${ctrl.students.length} 名学生'
-                                    : top
-                                        .map((s) => '${s.name} ${s.points}')
-                                        .join(' · '),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppTheme.secondaryLabel,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(
-                          AppIcons.chevronRight,
-                          size: 18,
-                          color: AppTheme.tertiaryLabel,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Divider(height: 1, color: AppTheme.separator),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _HubGridTile(
-                          icon: AppIcons.sliders,
-                          label: '积分规则',
-                          tint: AppTheme.blue,
-                          badge: ctrl.pointPresets.isEmpty
-                              ? null
-                              : '$addCount+ · $subCount−',
-                          compact: true,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const PointRulesScreen(),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (ctrl.isFeatureVisible(ClassFeatureIds.rewards))
-                        Expanded(
-                          child: _HubGridTile(
-                            icon: AppIcons.gift,
-                            label: '积分兑换',
-                            tint: const Color(0xFFFF9500),
-                            compact: true,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const RewardsScreen(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (ctrl.isFeatureVisible(ClassFeatureIds.settlements))
-                        Expanded(
-                          child: _HubGridTile(
-                            icon: AppIcons.clock,
-                            label: '结算',
-                            tint: const Color(0xFF5856D6),
-                            badge: ctrl.settlements.isEmpty
-                                ? null
-                                : '${ctrl.settlements.length}',
-                            compact: true,
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const SettlementsScreen(),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _FeatureGridSection extends StatelessWidget {
   const _FeatureGridSection({
     required this.header,
@@ -1022,7 +674,6 @@ class _HubGridTile extends StatelessWidget {
     required this.onTap,
     this.tint,
     this.badge,
-    this.compact = false,
   });
 
   final IconData icon;
@@ -1030,7 +681,6 @@ class _HubGridTile extends StatelessWidget {
   final VoidCallback onTap;
   final Color? tint;
   final String? badge;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1039,30 +689,27 @@ class _HubGridTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: EdgeInsets.symmetric(
-          vertical: compact ? 6 : 10,
-          horizontal: 2,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: compact ? 40 : 48,
-              height: compact ? 40 : 48,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(compact ? 12 : 14),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, size: compact ? 20 : 24, color: color),
+              child: Icon(icon, size: 24, color: color),
             ),
-            SizedBox(height: compact ? 4 : 6),
+            const SizedBox(height: 6),
             Text(
               label,
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: compact ? 11 : 12,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
                 color: AppTheme.label,
               ),

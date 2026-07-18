@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/app_info.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/shell_screen.dart';
+import 'package:smart_class/services/share_inbox.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
@@ -26,6 +27,8 @@ class _SplashGateState extends State<SplashGate> {
   Future<void> _boot() async {
     final started = DateTime.now();
     final ctrl = context.read<ClassController>();
+    // 尽早挂上分享通道，避免从微信冷启动进 App 时丢失文件。
+    await ShareInbox.ensureStarted();
 
     while (mounted && !ctrl.essentialReady && ctrl.error == null) {
       await Future<void>.delayed(const Duration(milliseconds: 32));

@@ -5,6 +5,8 @@ allprojects {
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         // Flutter 引擎 jar 国内镜像
         maven { url = uri("https://storage.flutter-io.cn/download.flutter.io") }
+        // ZFileManager（微信/QQ 文件选择，开源）
+        maven { url = uri("https://jitpack.io") }
         google()
         mavenCentral()
     }

@@ -19,7 +19,7 @@ class AppDatabase {
     final path = p.join(dir.path, 'smart_class.db');
     return openDatabase(
       path,
-      version: 15,
+      version: 17,
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
@@ -36,6 +36,8 @@ class AppDatabase {
         await _createV13(db);
         await _createV14(db);
         await _createV15(db);
+        await _createV16(db);
+        await _createV17(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
@@ -52,6 +54,8 @@ class AppDatabase {
         if (oldVersion < 13) await _createV13(db);
         if (oldVersion < 14) await _createV14(db);
         if (oldVersion < 15) await _createV15(db);
+        if (oldVersion < 16) await _createV16(db);
+        if (oldVersion < 17) await _createV17(db);
       },
     );
   }
@@ -421,6 +425,50 @@ class AppDatabase {
         title TEXT NOT NULL,
         done INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  /// 日常：请假 / 违纪
+  Future<void> _createV16(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS leave_records (
+        id TEXT PRIMARY KEY,
+        class_id TEXT NOT NULL,
+        student_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        reason TEXT NOT NULL DEFAULT '',
+        pickup TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS discipline_records (
+        id TEXT PRIMARY KEY,
+        class_id TEXT NOT NULL,
+        student_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        title TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT '',
+        points_delta INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  /// 工作留痕：照片 / 语音 / 视频附件
+  Future<void> _createV17(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS work_log_attachments (
+        id TEXT PRIMARY KEY,
+        class_id TEXT,
+        work_log_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        stored_name TEXT NOT NULL,
+        mime_hint TEXT,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
       )
     ''');

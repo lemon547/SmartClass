@@ -296,6 +296,25 @@ abstract final class WorkLogBatchExcel {
         ],
       );
 
+  /// 导出纯表格：仅类别 / 标题 / 内容 / 日期。
+  static Uint8List exportRows(List<WorkLog> logs) {
+    final excel = Excel.createExcel();
+    excel.rename('Sheet1', sheet);
+    final sh = excel[sheet];
+    sh.appendRow([for (final h in headers) TextCellValue(h)]);
+    for (final w in logs) {
+      sh.appendRow([
+        TextCellValue(w.category.label),
+        TextCellValue(w.title),
+        TextCellValue(w.content),
+        TextCellValue(w.date),
+      ]);
+    }
+    final bytes = excel.encode();
+    if (bytes == null) throw StateError('无法导出工作留痕');
+    return Uint8List.fromList(bytes);
+  }
+
   static ({List<WorkLogExcelRow> rows, List<String> warnings}) parse(
     Uint8List bytes,
   ) {
@@ -650,6 +669,104 @@ abstract final class PointBatchExcel {
         delta: delta,
         reason: reason.isEmpty ? (delta > 0 ? '加分' : '扣分') : reason,
       ));
+    }
+    return (rows: out, warnings: warnings);
+  }
+}
+
+class TeacherTimetableExcelRow {
+  const TeacherTimetableExcelRow({
+    required this.weekday,
+    required this.period,
+    required this.subject,
+    required this.className,
+  });
+
+  final int weekday;
+  final int period;
+  final String subject;
+  final String className;
+}
+
+/// 教师个人课表导入（星期 / 节次 / 科目 / 班级）
+abstract final class TeacherTimetableExcel {
+  static const sheet = '教师课表';
+
+  static Uint8List template() => ExcelBatchHelper.buildTemplate(
+        sheetName: sheet,
+        headers: const ['星期', '节次', '科目', '班级'],
+        sampleRows: const [
+          ['一', '1', '语文', '高一（1）班'],
+          ['一', '3', '语文', '高一（2）班'],
+          ['三', '5', '班会', '高一（1）班'],
+        ],
+        tips: const [
+          ('星期', '一～日，或 1～7'),
+          ('节次', '第几节，数字 1～12'),
+          ('科目', '本人授课科目，如语文'),
+          ('班级', '须与 App 中班级名称一致（可含年级）'),
+          ('说明', '导入会写入对应班级课表，并标记为本人授课；示例行可删'),
+        ],
+      );
+
+  static ({List<TeacherTimetableExcelRow> rows, List<String> warnings}) parse(
+    Uint8List bytes,
+  ) {
+    final excel = Excel.decodeBytes(bytes);
+    final sh = ExcelBatchHelper.pickSheet(excel, preferred: sheet);
+    final warnings = <String>[];
+    if (sh == null || sh.maxRows < 2) {
+      return (rows: const [], warnings: ['没有可导入的数据']);
+    }
+    final cols = ExcelBatchHelper.mapHeaders(sh, {
+      '星期': '星期',
+      '周几': '星期',
+      '星期几': '星期',
+      '节次': '节次',
+      '第几节': '节次',
+      '科目': '科目',
+      '课程': '科目',
+      '班级': '班级',
+      '班级名称': '班级',
+      '上课班级': '班级',
+    });
+    final out = <TeacherTimetableExcelRow>[];
+    for (var r = 1; r < sh.maxRows; r++) {
+      final row = sh.row(r);
+      final subject = ExcelBatchHelper.at(row, cols, '科目');
+      final className = ExcelBatchHelper.at(row, cols, '班级');
+      if (ExcelBatchHelper.isSampleMarker(subject) ||
+          ExcelBatchHelper.isSampleMarker(className)) {
+        continue;
+      }
+      if (subject.isEmpty && className.isEmpty) continue;
+      final wd = ExcelBatchHelper.parseWeekday(
+        ExcelBatchHelper.at(row, cols, '星期'),
+      );
+      final periodRaw = ExcelBatchHelper.at(row, cols, '节次')
+          .replaceAll(RegExp(r'[第节次]'), '')
+          .trim();
+      final period = int.tryParse(periodRaw);
+      if (wd == null || period == null || period < 1) {
+        warnings.add('第 ${r + 1} 行星期或节次无效');
+        continue;
+      }
+      if (subject.isEmpty) {
+        warnings.add('第 ${r + 1} 行缺科目');
+        continue;
+      }
+      if (className.isEmpty) {
+        warnings.add('第 ${r + 1} 行缺班级');
+        continue;
+      }
+      out.add(
+        TeacherTimetableExcelRow(
+          weekday: wd,
+          period: period,
+          subject: subject,
+          className: className,
+        ),
+      );
     }
     return (rows: out, warnings: warnings);
   }

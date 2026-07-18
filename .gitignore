@@ -1,3 +1,9 @@
+# Local AI secrets (never commit)
+/secrets/
+/lib/config/local_ai_key.dart
+.playwright-mcp/
+**/android/build/
+
 # Miscellaneous
 *.class
 *.log

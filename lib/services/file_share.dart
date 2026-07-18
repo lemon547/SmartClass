@@ -29,12 +29,26 @@ abstract final class FileShare {
     );
   }
 
+  static Future<void> shareZip({
+    required String filePath,
+    String? subject,
+    String? text,
+  }) async {
+    await shareFile(
+      filePath: filePath,
+      mimeType: 'application/zip',
+      subject: subject,
+      text: text,
+    );
+  }
+
   static String mimeForPath(String path) {
     return switch (p.extension(path).toLowerCase()) {
       '.xlsx' => _xlsxMime,
       '.xls' => 'application/vnd.ms-excel',
       '.csv' => 'text/csv',
       '.json' => 'application/json',
+      '.zip' => 'application/zip',
       _ => 'application/octet-stream',
     };
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/grades/ai_exam_import_screen.dart';
 import 'package:smart_class/screens/grades/exam_detail_screen.dart';
 import 'package:smart_class/screens/grades/exam_edit_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
@@ -38,6 +39,11 @@ class _GradesScreenState extends State<GradesScreen> {
       appBar: PageAppBar(
         title: const Text('成绩分析'),
         actions: [
+          IconButton(
+            tooltip: 'AI 智能导入',
+            onPressed: () => AiExamImportScreen.push(context),
+            icon: const Icon(AppIcons.sparkles),
+          ),
           IconButton(
             tooltip: '新建考试',
             onPressed: () => ExamEditScreen.push(context),
@@ -94,7 +100,7 @@ class _GradesScreenState extends State<GradesScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '可新建期末考、半期考、月考等，导入 Excel 后查看分析',
+                            '可新建考试，或用 AI 导入任意格式成绩表',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,

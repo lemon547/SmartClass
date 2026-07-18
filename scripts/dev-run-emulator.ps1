@@ -1,4 +1,4 @@
-# SmartClass — 模拟器开发：启动模拟器 + 保存代码自动热重启（方便截图）
+# SmartClass - emulator dev: start emulator + auto hot-restart on save
 param(
     [switch]$SkipLaunch
 )
@@ -50,4 +50,5 @@ if (-not $deviceId) {
 
 flutter pub get | Out-Null
 Write-Host "[SmartClass] Target emulator: $deviceId" -ForegroundColor Green
-dart tool/dev_runner.dart -d $deviceId
+# Impeller on this AVD can crash at launch (texture size 0x0); Skia is stable for screenshots.
+dart tool/dev_runner.dart -d $deviceId --no-enable-impeller

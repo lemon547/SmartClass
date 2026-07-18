@@ -1,8 +1,9 @@
-﻿import 'package:smart_class/theme/app_icons.dart';
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 
@@ -26,34 +27,37 @@ class NotesScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 28),
         children: [
-          GroupedSection(
-            children: [
-              if (ctrl.notes.isEmpty)
-                Padding(
-                  padding: EdgeInsets.all(18),
-                  child: Text('记录班会、通知、家长沟通要点',
-                      style: TextStyle(color: AppTheme.tertiaryLabel)),
-                )
-              else
-                for (final n in ctrl.notes)
-                  Dismissible(
-                    key: ValueKey(n.id),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      color: AppTheme.destructive,
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      child: const Icon(AppIcons.trash, color: Colors.white),
+          SlidableAutoCloseBehavior(
+            child: GroupedSection(
+              children: [
+                if (ctrl.notes.isEmpty)
+                  Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                      '记录班会、通知、家长沟通要点',
+                      style: TextStyle(color: AppTheme.tertiaryLabel),
                     ),
-                    onDismissed: (_) => ctrl.deleteNote(n.id),
-                    child: GroupedTile(
-                      title: n.title,
-                      subtitle:
-                          '${DateFormat('M/d HH:mm').format(n.createdAt)}${n.content.isEmpty ? '' : ' · ${n.content}'}',
-                      onTap: () => _edit(context, id: n.id, title: n.title, content: n.content),
+                  )
+                else
+                  for (final n in ctrl.notes)
+                    AppleDeleteSlidable(
+                      itemKey: ValueKey(n.id),
+                      confirmTitle: '删除「${n.title}」？',
+                      onDelete: () => ctrl.deleteNote(n.id),
+                      child: GroupedTile(
+                        title: n.title,
+                        subtitle:
+                            '${DateFormat('M/d HH:mm').format(n.createdAt)}${n.content.isEmpty ? '' : ' · ${n.content}'}',
+                        onTap: () => _edit(
+                          context,
+                          id: n.id,
+                          title: n.title,
+                          content: n.content,
+                        ),
+                      ),
                     ),
-                  ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

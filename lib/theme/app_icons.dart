@@ -33,6 +33,10 @@ abstract final class AppIcons {
   static const IconData grid = LucideIcons.grid2x2;
   static const IconData dices = LucideIcons.dices;
   static const IconData clipboardList = LucideIcons.clipboardList;
+  /// 底部「日常」Tab
+  static const IconData daily = LucideIcons.clipboardCheck;
+  /// 底部「留痕」Tab
+  static const IconData traces = LucideIcons.notebookPen;
   static const IconData settings = LucideIcons.settings;
   static const IconData users = LucideIcons.usersRound;
   static const IconData chart = LucideIcons.chartColumn;
@@ -48,4 +52,16 @@ abstract final class AppIcons {
   static const IconData upload = LucideIcons.upload;
   static const IconData share = LucideIcons.share2;
   static const IconData fileSheet = LucideIcons.sheet;
+  static const IconData photo = LucideIcons.image;
+  static const IconData camera = LucideIcons.camera;
+  static const IconData mic = LucideIcons.mic;
+  static const IconData video = LucideIcons.video;
+  static const IconData file = LucideIcons.file;
+  static const IconData folder = LucideIcons.folderOpen;
+  static const IconData message = LucideIcons.messageCircle;
+  static const IconData refresh = LucideIcons.refreshCw;
+  static const IconData sparkles = LucideIcons.sparkles;
+  static const IconData wand = LucideIcons.wandSparkles;
+  static const IconData eye = LucideIcons.eye;
+  static const IconData eyeOff = LucideIcons.eyeOff;
 }

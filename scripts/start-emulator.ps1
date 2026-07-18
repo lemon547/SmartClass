@@ -14,8 +14,13 @@ if ($running) {
     exit 0
 }
 
-Write-Host '[emulator] starting SmartClass_Pixel ...' -ForegroundColor Cyan
-Start-Process -FilePath 'emulator' -ArgumentList '-avd', 'SmartClass_Pixel' -WindowStyle Normal
+Write-Host '[emulator] starting SmartClass_Pixel (swiftshader GPU) ...' -ForegroundColor Cyan
+# host GPU often paints a black window on this machine; swiftshader is stable for screenshots
+Start-Process -FilePath 'emulator' -ArgumentList @(
+    '-avd', 'SmartClass_Pixel',
+    '-gpu', 'swiftshader_indirect',
+    '-no-snapshot-load'
+) -WindowStyle Normal
 
 $deadline = (Get-Date).AddMinutes(3)
 do {

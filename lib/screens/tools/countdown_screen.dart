@@ -1,5 +1,5 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
@@ -8,7 +8,7 @@ import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 
-/// 倒数日：支持多条，点击添加/编辑，长按删除
+/// 倒数日：左滑点「删除」；点击编辑
 class CountdownScreen extends StatelessWidget {
   const CountdownScreen({super.key});
 
@@ -76,20 +76,39 @@ class CountdownScreen extends StatelessWidget {
             )
           else ...[
             if (upcoming.isNotEmpty)
-              GroupedSection(
-                header: '进行中 · ${upcoming.length}',
-                footer: '点按编辑，长按删除。可添加任意多个。',
-                children: [
-                  for (final c in upcoming) _CountdownTile(item: c),
-                ],
+              SlidableAutoCloseBehavior(
+                child: GroupedSection(
+                  header: '进行中 · ${upcoming.length}',
+                  children: [
+                    for (final c in upcoming)
+                      AppleDeleteSlidable(
+                        itemKey: ValueKey(c.id),
+                        confirmTitle: '删除「${c.title}」？',
+                        onDelete: () => context
+                            .read<ClassController>()
+                            .deleteCountdown(c.id),
+                        child: _CountdownTile(item: c),
+                      ),
+                  ],
+                ),
               ),
             if (past.isNotEmpty) ...[
               const SizedBox(height: 18),
-              GroupedSection(
-                header: '已过期 · ${past.length}',
-                children: [
-                  for (final c in past) _CountdownTile(item: c),
-                ],
+              SlidableAutoCloseBehavior(
+                child: GroupedSection(
+                  header: '已过期 · ${past.length}',
+                  children: [
+                    for (final c in past)
+                      AppleDeleteSlidable(
+                        itemKey: ValueKey(c.id),
+                        confirmTitle: '删除「${c.title}」？',
+                        onDelete: () => context
+                            .read<ClassController>()
+                            .deleteCountdown(c.id),
+                        child: _CountdownTile(item: c),
+                      ),
+                  ],
+                ),
               ),
             ],
           ],
@@ -109,29 +128,6 @@ class CountdownScreen extends StatelessWidget {
         builder: (_) => _CountdownEditScreen(id: id, title: title, date: date),
       ),
     );
-  }
-
-  static Future<void> delete(BuildContext context, CountdownItem c) async {
-    final ok = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: Text('删除「${c.title}」？'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && context.mounted) {
-      await context.read<ClassController>().deleteCountdown(c.id);
-    }
   }
 }
 
@@ -270,7 +266,6 @@ class _CountdownTile extends StatelessWidget {
         title: item.title,
         date: item.targetDate,
       ),
-      onLongPress: () => CountdownScreen.delete(context, item),
     );
   }
 }

@@ -10,6 +10,7 @@ abstract final class LocalFileArchive {
 
   static const lessonRoot = 'lesson_archives';
   static const examRoot = 'exam_archives';
+  static const workLogRoot = 'work_log_archives';
 
   static Future<Directory> ownerDir({
     required String root,
