@@ -19,7 +19,7 @@ class AppDatabase {
     final path = p.join(dir.path, 'smart_class.db');
     return openDatabase(
       path,
-      version: 17,
+      version: 18,
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
@@ -38,6 +38,7 @@ class AppDatabase {
         await _createV15(db);
         await _createV16(db);
         await _createV17(db);
+        await _createV18(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
@@ -56,6 +57,7 @@ class AppDatabase {
         if (oldVersion < 15) await _createV15(db);
         if (oldVersion < 16) await _createV16(db);
         if (oldVersion < 17) await _createV17(db);
+        if (oldVersion < 18) await _createV18(db);
       },
     );
   }
@@ -472,5 +474,24 @@ class AppDatabase {
         created_at TEXT NOT NULL
       )
     ''');
+  }
+
+  /// 成绩：折算/年级/官方单科排名（导入字段）
+  Future<void> _createV18(Database db) async {
+    try {
+      await db.execute(
+        'ALTER TABLE exam_scores ADD COLUMN converted_rank INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE exam_scores ADD COLUMN grade_rank INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE exam_scores ADD COLUMN subject_ranks TEXT DEFAULT ""',
+      );
+    } catch (_) {}
   }
 }

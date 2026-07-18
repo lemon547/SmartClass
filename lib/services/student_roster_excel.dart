@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 import 'package:smart_class/models/models.dart';
+import 'package:smart_class/services/excel_grid.dart';
 
 /// 一行待导入的学生档案（不含 id / 积分 / 座位）。
 class StudentRosterRow {
@@ -173,7 +174,7 @@ class StudentRosterExcel {
   }
 
   static StudentRosterParseResult _parseXlsx(Uint8List bytes) {
-    final excel = Excel.decodeBytes(bytes);
+    final excel = ExcelGrid.decodeExcelBytes(bytes);
     final sheet = _pickSheet(excel);
     if (sheet == null || sheet.maxRows == 0) {
       return const StudentRosterParseResult(

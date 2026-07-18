@@ -56,12 +56,6 @@ class _AiExamAssistScreenState extends State<AiExamAssistScreen> {
       };
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _run());
-  }
-
-  @override
   void dispose() {
     _themeHint.dispose();
     super.dispose();
@@ -197,7 +191,7 @@ class _AiExamAssistScreenState extends State<AiExamAssistScreen> {
             IconButton(
               tooltip: '复制',
               onPressed: _copy,
-              icon: const Icon(Icons.copy_outlined),
+              icon: const Icon(AppIcons.copy),
             ),
             IconButton(
               tooltip: '重新生成',
@@ -284,7 +278,7 @@ class _AiExamAssistScreenState extends State<AiExamAssistScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _copy,
-                    icon: const Icon(Icons.copy_outlined, size: 18),
+                    icon: const Icon(AppIcons.copy, size: 18),
                     label: const Text('复制'),
                   ),
                 ),
@@ -292,7 +286,7 @@ class _AiExamAssistScreenState extends State<AiExamAssistScreen> {
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: _saveWorkLog,
-                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    icon: const Icon(AppIcons.notebook, size: 18),
                     label: Text(
                       widget.mode == AiExamAssistMode.classMeeting
                           ? '存为班会留痕'
@@ -309,6 +303,25 @@ class _AiExamAssistScreenState extends State<AiExamAssistScreen> {
                 style: TextStyle(fontSize: 12, color: AppTheme.tertiaryLabel),
               ),
             ],
+          ] else ...[
+            Text(
+              widget.mode == AiExamAssistMode.analyze
+                  ? '根据本场考试数据生成成绩解读，可复制或存入工作留痕。'
+                  : '可先填写主题倾向，再生成班会议程与主持话术。',
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: AppTheme.tertiaryLabel,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _run,
+              icon: const Icon(AppIcons.sparkles, size: 18),
+              label: Text(
+                widget.mode == AiExamAssistMode.analyze ? '生成解读' : '生成班会',
+              ),
+            ),
           ],
         ],
       ),

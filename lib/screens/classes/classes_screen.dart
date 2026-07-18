@@ -59,13 +59,6 @@ class ClassesScreen extends StatelessWidget {
                     onTap: () async {
                       if (c.id != ctrl.currentClass?.id) {
                         await ctrl.switchClass(c.id);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('已切换到 ${c.displayTitle}'),
-                            ),
-                          );
-                        }
                       }
                     },
                     onLongPress: () => _classActions(context, c),

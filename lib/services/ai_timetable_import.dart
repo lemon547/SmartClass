@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:smart_class/services/ai_import_pipeline.dart';
 import 'package:smart_class/services/deepseek_ai_service.dart';
 import 'package:smart_class/services/excel_batch_helper.dart';
 import 'package:smart_class/services/excel_grid.dart';
@@ -45,6 +46,37 @@ class AiTimetableMapping {
   final String className;
   final String notes;
 
+  AiTimetableMapping copyWith({
+    AiTimetableLayout? layout,
+    int? headerRowIndex,
+    int? weekdayColumn,
+    int? periodColumn,
+    int? subjectColumn,
+    int? classColumn,
+    Map<int, int>? weekdayColumns,
+    String? className,
+    String? notes,
+    bool clearWeekdayColumn = false,
+    bool clearPeriodColumn = false,
+    bool clearSubjectColumn = false,
+    bool clearClassColumn = false,
+  }) {
+    return AiTimetableMapping(
+      layout: layout ?? this.layout,
+      headerRowIndex: headerRowIndex ?? this.headerRowIndex,
+      weekdayColumn:
+          clearWeekdayColumn ? null : (weekdayColumn ?? this.weekdayColumn),
+      periodColumn:
+          clearPeriodColumn ? null : (periodColumn ?? this.periodColumn),
+      subjectColumn:
+          clearSubjectColumn ? null : (subjectColumn ?? this.subjectColumn),
+      classColumn: clearClassColumn ? null : (classColumn ?? this.classColumn),
+      weekdayColumns: weekdayColumns ?? this.weekdayColumns,
+      className: className ?? this.className,
+      notes: notes ?? this.notes,
+    );
+  }
+
   factory AiTimetableMapping.fromJson(Map<String, dynamic> json) {
     final layoutRaw = (json['layout'] ?? 'matrix').toString().toLowerCase();
     final layout = layoutRaw == 'list'
@@ -88,55 +120,202 @@ class AiTimetableParseResult {
   const AiTimetableParseResult({
     required this.mapping,
     required this.rows,
+    required this.grid,
     this.warnings = const [],
+    this.validationErrors = const [],
+    this.mappingOk = false,
+    this.repairAttempts = 0,
   });
 
   final AiTimetableMapping mapping;
   final List<AiTimetableSlotRow> rows;
+  final ExcelGrid grid;
   final List<String> warnings;
+  final List<String> validationErrors;
+  final bool mappingOk;
+  final int repairAttempts;
+
+  bool get needsManualMapping => !mappingOk;
 }
 
-/// 任意课表 Excel → AI 映射 → 本地全表提取。
+/// 任意课表文件 → AI 映射 → 校验/纠错 → 本地全表提取。
 class AiTimetableImport {
-  AiTimetableImport(this._ai);
+  AiTimetableImport(this._ai, {this.maxAttempts = 3});
 
   final DeepSeekAiService _ai;
+  final int maxAttempts;
 
   Future<AiTimetableParseResult> parseBytes(
     Uint8List bytes, {
     String? fileName,
     List<String> knownClassTitles = const [],
   }) async {
-    final grid = ExcelGrid.fromBytes(bytes, fileName: fileName);
+    final grid = await ExcelGrid.fromBytesAsync(bytes, fileName: fileName);
     if (grid.rows.isEmpty) {
-      return const AiTimetableParseResult(
-        mapping: AiTimetableMapping(
+      return AiTimetableParseResult(
+        mapping: const AiTimetableMapping(
           layout: AiTimetableLayout.matrix,
           headerRowIndex: 0,
         ),
-        rows: [],
-        warnings: ['表格为空或无法读取'],
+        rows: const [],
+        grid: grid,
+        warnings: const ['表格为空或无法读取'],
+        validationErrors: const ['表格为空'],
+        mappingOk: false,
       );
     }
 
-    final mappingJson = await _ai.inferTimetableMappingJson(
-      tsv: grid.toNumberedTsv(maxRows: 40, maxCols: 12),
-      sheetName: grid.sheetName,
-      knownClassTitles: knownClassTitles,
+    final tsv = grid.toNumberedTsv(maxRows: 40, maxCols: 12);
+    final repaired = await AiMappingRepairLoop.run<AiTimetableMapping>(
+      ai: _ai,
+      seedMessages: _ai.timetableMappingSeedMessages(
+        tsv: tsv,
+        sheetName: grid.sheetName,
+        knownClassTitles: knownClassTitles,
+      ),
+      parseMapping: AiTimetableMapping.fromJson,
+      validate: (m) => validateMapping(grid, m),
+      fallbackMapping: const AiTimetableMapping(
+        layout: AiTimetableLayout.matrix,
+        headerRowIndex: 0,
+      ),
+      jsonLabel: '课表结构',
+      requiredFieldsHint: 'layout、headerRowIndex',
+      maxAttempts: maxAttempts,
+      repairUserMessage: (m, errors) {
+        final dump = AiImportGridHelpers.headerDump(grid, m.headerRowIndex);
+        return '语义校验失败，请对照原始 TSV 与各列样例整份重做 json：\n'
+            '${errors.map((e) => '- $e').join('\n')}\n\n'
+            '当前表头行各列快照：\n$dump';
+      },
     );
-    final mapping = AiTimetableMapping.fromJson(mappingJson);
-    final extracted = _extractRows(grid, mapping);
+
+    final extracted = extractRows(grid, repaired.mapping);
     return AiTimetableParseResult(
-      mapping: mapping,
+      mapping: repaired.mapping,
       rows: extracted.rows,
+      grid: grid,
       warnings: [
-        if (mapping.notes.isNotEmpty) mapping.notes,
+        if (repaired.mapping.notes.isNotEmpty) repaired.mapping.notes,
+        ...repaired.warnings,
         ...extracted.warnings,
       ],
+      validationErrors: repaired.validationErrors,
+      mappingOk: repaired.mappingOk,
+      repairAttempts: repaired.attempts,
     );
   }
 
-  static ({List<AiTimetableSlotRow> rows, List<String> warnings}) _extractRows(
+  static AiTimetableParseResult applyMapping(
+    ExcelGrid grid,
+    AiTimetableMapping mapping, {
+    List<String> extraWarnings = const [],
+  }) {
+    final errors = validateMapping(grid, mapping);
+    final extracted = extractRows(grid, mapping);
+    return AiTimetableParseResult(
+      mapping: mapping,
+      rows: extracted.rows,
+      grid: grid,
+      warnings: [
+        if (mapping.notes.isNotEmpty) mapping.notes,
+        ...extraWarnings,
+        ...extracted.warnings,
+      ],
+      validationErrors: errors,
+      mappingOk: errors.isEmpty,
+    );
+  }
+
+  static List<String> validateMapping(
+    ExcelGrid grid,
+    AiTimetableMapping mapping,
+  ) {
+    final errors = <String>[];
+    final header = mapping.headerRowIndex;
+    if (header < 0 || header >= grid.rows.length) {
+      errors.add('headerRowIndex=$header 无效');
+      return errors;
+    }
+
+    if (mapping.layout == AiTimetableLayout.list) {
+      if (mapping.weekdayColumn == null ||
+          mapping.periodColumn == null ||
+          mapping.subjectColumn == null) {
+        errors.add('长表缺少 weekdayColumn / periodColumn / subjectColumn');
+      }
+      for (final e in {
+        '星期': mapping.weekdayColumn,
+        '节次': mapping.periodColumn,
+        '科目': mapping.subjectColumn,
+        '班级': mapping.classColumn,
+      }.entries) {
+        if (!AiImportGridHelpers.columnInRange(grid, e.value)) {
+          errors.add('${e.key}列索引 ${e.value} 无效');
+        }
+      }
+      if (errors.isNotEmpty) return errors;
+
+      final subjects = AiImportGridHelpers.columnSamples(
+        grid,
+        header,
+        mapping.subjectColumn!,
+        limit: 10,
+        skip: _isNoiseSubject,
+      );
+      if (subjects.isEmpty) {
+        errors.add('科目列几乎没有有效课程名');
+      }
+      final weekdays = AiImportGridHelpers.columnSamples(
+        grid,
+        header,
+        mapping.weekdayColumn!,
+        limit: 8,
+      );
+      final parsedWd =
+          weekdays.where((s) => ExcelBatchHelper.parseWeekday(s) != null).length;
+      if (weekdays.isNotEmpty && parsedWd < (weekdays.length / 2).ceil()) {
+        errors.add(
+          '星期列样例多数无法解析为周一~周日（${weekdays.take(4).join('、')}）',
+        );
+      }
+    } else {
+      if (mapping.weekdayColumns.isEmpty) {
+        errors.add('矩阵未识别到 weekdayColumns');
+      }
+      if (!AiImportGridHelpers.columnInRange(
+        grid,
+        mapping.periodColumn ?? 0,
+      )) {
+        errors.add('periodColumn=${mapping.periodColumn} 无效');
+      }
+      for (final e in mapping.weekdayColumns.entries) {
+        if (!AiImportGridHelpers.columnInRange(grid, e.value)) {
+          errors.add('星期${e.key}列索引 ${e.value} 无效');
+        }
+      }
+      if (errors.isNotEmpty) return errors;
+
+      // 至少一个星期列抽到非空科目样例
+      var subjectHits = 0;
+      for (final col in mapping.weekdayColumns.values) {
+        final samples = AiImportGridHelpers.columnSamples(
+          grid,
+          header,
+          col,
+          limit: 6,
+          skip: _isNoiseSubject,
+        );
+        subjectHits += samples.length;
+      }
+      if (subjectHits == 0) {
+        errors.add('矩阵星期列几乎抽不到科目内容，请检查 weekdayColumns');
+      }
+    }
+    return errors;
+  }
+
+  static ({List<AiTimetableSlotRow> rows, List<String> warnings}) extractRows(
     ExcelGrid grid,
     AiTimetableMapping mapping,
   ) {
@@ -226,13 +405,11 @@ class AiTimetableImport {
       }
 
       var period = _parsePeriod(at(pCol));
-      // 若节次列为空，尝试用相对行号：表头下一行为第 1 节
       period ??= (r - header).clamp(1, 20);
 
       for (final e in mapping.weekdayColumns.entries) {
         final subject = at(e.value);
         if (subject.isEmpty || _isNoiseSubject(subject)) continue;
-        // 单元格可能是「语文\n张老师」只取第一行科目
         final sub = subject.split(RegExp(r'[\n/|]')).first.trim();
         if (sub.isEmpty || _isNoiseSubject(sub)) continue;
         rows.add(

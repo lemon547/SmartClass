@@ -34,6 +34,8 @@ dependencies:
   audioplayers: ^6.8.1
   image_picker: ^1.2.3
   http: ^1.6.0
+  # 本地免费 OCR（Google ML Kit），图片导入先抽文字再给 AI
+  google_mlkit_text_recognition: ^0.15.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

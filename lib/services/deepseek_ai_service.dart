@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:smart_class/services/ai_class_context.dart';
 
 /// DeepSeek Chat Completions（OpenAI 兼容）。
 class DeepSeekAiService {
@@ -29,6 +30,7 @@ class DeepSeekAiService {
     required String system,
     required String user,
     double temperature = 0.6,
+    bool jsonObject = false,
   }) async {
     return chatMessages(
       messages: [
@@ -36,6 +38,7 @@ class DeepSeekAiService {
         {'role': 'user', 'content': user},
       ],
       temperature: temperature,
+      jsonObject: jsonObject,
     );
   }
 
@@ -43,6 +46,7 @@ class DeepSeekAiService {
   Future<String> chatMessages({
     required List<Map<String, String>> messages,
     double temperature = 0.6,
+    bool jsonObject = false,
   }) async {
     if (!hasKey) {
       throw const DeepSeekAiException('尚未配置 DeepSeek API Key');
@@ -59,6 +63,10 @@ class DeepSeekAiService {
     // 思考模式下 temperature 无效；非思考时才传，便于稳定短答。
     if (!thinkingEnabled) {
       body['temperature'] = temperature;
+    }
+    // DeepSeek JSON Output：保证返回合法 JSON（仍须在 prompt 里写 json + 示例）。
+    if (jsonObject) {
+      body['response_format'] = {'type': 'json_object'};
     }
 
     final res = await _client.post(
@@ -91,7 +99,7 @@ class DeepSeekAiService {
     return text;
   }
 
-  /// 是否像在问本班数据（成绩/课表/学生等）——是则带快照，否省 token。
+  /// 是否像在问本班数据（成绩/课表/学生等）——是则走「目录选型→按需加载」。
   static bool looksLikeClassDataQuestion(String question) {
     final q = question.trim();
     if (q.isEmpty) return false;
@@ -105,6 +113,9 @@ class DeepSeekAiService {
       '成绩',
       '分数',
       '考试',
+      '月考',
+      '期中',
+      '期末',
       '总分',
       '进步',
       '退步',
@@ -132,9 +143,17 @@ class DeepSeekAiService {
       '地理',
       '政治',
       '待办',
+      '要做',
+      '提醒',
+      '加减分',
+      '积分规则',
+      '加分规则',
+      '扣分规则',
+      '今天要干',
       '留痕',
       '家访',
       '家长',
+      '家长会',
       '班会',
       '主题班会',
       '班会课',
@@ -146,6 +165,67 @@ class DeepSeekAiService {
       if (q.contains(k)) return true;
     }
     return false;
+  }
+
+  /// 轻量选型：只看数据包目录，输出 JSON（类似 Skill 先读 description 再决定加载）。
+  Future<AiPackSelectResult> selectClassDataPacks({
+    required String question,
+    required String catalog,
+  }) async {
+    const system = '''
+你是班主任助手的数据路由。根据用户问题，从「可用数据包」目录中选择最少必要的包。
+规则：
+1. 只输出一行 JSON，不要解释、不要 markdown。
+2. 格式：{"packs":["exam_brief","work_logs"],"examId":"..."}
+3. packs 取值只能是目录里的 id；最多 4 个；不需要班级数据时必须输出 {"packs":[]}。
+4. 选了 exam_brief 时必须填目录里的精确 examId；不确定就不要选 exam_brief，改选 grades_overview。
+5. 家长会/班会：优先 exam_brief + work_logs；普通成绩问答用 grades_overview。
+6. 整理/记下待办：选 todos；设计加减分规则：选 points。
+7. 闲聊或与本班无关：{"packs":[]}
+''';
+    final user = '''
+===== 数据包目录 =====
+$catalog
+===== 目录结束 =====
+
+用户问题：$question
+''';
+    final raw = await chat(
+      system: system,
+      user: user,
+      temperature: 0.1,
+    );
+    return parsePackSelectionJson(raw);
+  }
+
+  /// 解析选型 JSON。解析失败返回 [AiPackSelectResult.invalid]，勿与空 packs 混淆。
+  static AiPackSelectResult parsePackSelectionJson(String raw) {
+    try {
+      final t = raw.trim();
+      final start = t.indexOf('{');
+      final end = t.lastIndexOf('}');
+      if (start < 0 || end <= start) return AiPackSelectResult.invalid();
+      final decoded = jsonDecode(t.substring(start, end + 1));
+      if (decoded is! Map) return AiPackSelectResult.invalid();
+      if (!decoded.containsKey('packs')) return AiPackSelectResult.invalid();
+
+      final packs = <AiDataPackId>[];
+      final rawPacks = decoded['packs'];
+      if (rawPacks is! List) return AiPackSelectResult.invalid();
+      for (final item in rawPacks) {
+        final id = AiDataPackIdX.tryParse(item.toString());
+        if (id != null && !packs.contains(id)) packs.add(id);
+      }
+      final examId = decoded['examId']?.toString().trim();
+      return AiPackSelectResult.ok(
+        AiPackSelection(
+          packs: packs.take(4).toList(),
+          examId: (examId == null || examId.isEmpty) ? null : examId,
+        ),
+      );
+    } catch (_) {
+      return AiPackSelectResult.invalid();
+    }
   }
 
   /// 智能问答：需要本班数据才塞快照，闲聊走短提示。
@@ -178,9 +258,12 @@ class DeepSeekAiService {
     final system = '''
 你是「班主任助手」里的懒羊羊机器人，用亲切、简洁的中文回答班主任的问题。
 你只能根据下方「本机班级数据快照」作答，不要编造快照中没有的学生、分数或课程。
-若数据不足，明确说缺什么（例如尚未录入某次考试）。
+若数据不足，明确说缺什么（例如尚未录入某次考试或缺少各科分数）。
 可以做汇总、对比、进步分析、本周课表查询、积分/考勤提醒等。
-回答尽量短小好读，必要时用分点；一般不超过 8 行。
+一般回答尽量短小好读，必要时用分点；不超过 8 行。
+若用户要求生成「家长会/班会」稿，可分点写完整提纲（主题、学情、典型、建议、流程），仍严禁编造快照没有的数据；缺数据处写「待补充」即可。
+
+$_actionProposalInstructions
 
 ===== 本机班级数据快照 =====
 $classDataSnapshot
@@ -199,10 +282,12 @@ $classDataSnapshot
     required List<Map<String, String>> history,
     required String question,
   }) {
-    const system = '''
+    final system = '''
 你是「班主任助手」里的懒羊羊，用亲切、简洁的中文闲聊或答疑。
 当前看不到本班学生/成绩/课表；若对方在问具体学生数据，请温柔提示可以说「课表/成绩/积分/谁」等关键词，我会自动查本班。
 回答尽量短、好读。
+
+$_actionProposalInstructions
 ''';
     final messages = <Map<String, String>>[
       {'role': 'system', 'content': system},
@@ -211,6 +296,18 @@ $classDataSnapshot
     ];
     return chatMessages(messages: messages, temperature: 0.55);
   }
+
+  /// 提案协议：只产出草稿 JSON，由 App 让用户确认后写入。
+  static const _actionProposalInstructions = '''
+【可写动作·仅草稿】当用户明确要「记下/整理今天待办」或「设计/导入加减分规则」时：
+1. 先用简短中文说明你拟了什么（不要说已经写入）。
+2. 在回复最末尾单独追加一个 JSON（不要 markdown 代码块），二选一：
+   {"type":"todo_draft","items":[{"title":"催交数学作业"},{"title":"家访小明"}]}
+   {"type":"point_preset_draft","items":[{"reason":"迟到","delta":-2},{"reason":"发言积极","delta":2}]}
+4. 严禁声称已写入 App；严禁给学生直接加减分；delta 为整数且非 0。
+5. 普通问答不要附加上述 JSON。
+6. 正文里不要粘贴 JSON；JSON 只放在最末尾单独一行。
+''';
 
   /// 润色工作留痕正文：更规范、可归档，不编造事实。
   Future<String> polishWorkLog({
@@ -316,13 +413,13 @@ $examBrief
     return reply.contains('成功');
   }
 
-  /// 识别任意成绩表的列结构，返回可解析为映射的 JSON Map。
-  Future<Map<String, dynamic>> inferGradeTableMappingJson({
+  /// 成绩表列映射：构建多轮对话的初始 messages（含 JSON 示例，配合 response_format）。
+  List<Map<String, String>> gradeTableMappingSeedMessages({
     required String tsv,
     required String sheetName,
     List<String> knownStudentNames = const [],
     List<String> preferredSubjects = const [],
-  }) async {
+  }) {
     final namesHint = knownStudentNames.isEmpty
         ? '（未提供）'
         : knownStudentNames.take(80).join('、');
@@ -330,76 +427,107 @@ $examBrief
         ? '（未指定，请用表头常见中文科目名，如语文、数学、英语）'
         : preferredSubjects.join('、');
 
-    final raw = await chat(
-      system: '''
+    return [
+      {
+        'role': 'system',
+        'content': '''
 你是中小学成绩表结构识别器。用户给你带行号的 TSV（列从 0 起算；行号 R0、R1…）。
-表头列名不固定：可能是「姓名/名字/学生姓名/学员」「学号/学籍号/考号/编号」「语/语文/Chinese」等，也可能带空格、序号前缀。
-你的任务是根据表头文字 + 下方数据样例，推断每列含义。只输出一个 JSON，不要 markdown。
+你必须只输出一个合法 json 对象（不要 markdown），字段如下：
 
+EXAMPLE JSON OUTPUT:
 {
-  "examTitle": "能读到则填，否则空字符串",
-  "examDate": "yyyy-MM-dd 或空字符串",
-  "category": "期末考/半期考/月考/周测/其他 或空字符串",
-  "headerRowIndex": 表头行号 n,
-  "nameColumn": 姓名列索引,
-  "studentNoColumn": 学号列索引或 null,
-  "remarkColumn": 备注列索引或 null,
+  "examTitle": "",
+  "examDate": "",
+  "category": "",
+  "headerRowIndex": 0,
+  "nameColumn": 0,
+  "studentNoColumn": null,
+  "remarkColumn": null,
   "subjectColumns": { "语文": 2, "数学": 3 },
-  "sourceLabels": { "name": "原表头文字", "studentNo": "原表头", "语文": "原科目表头" },
-  "notes": "一句说明（含你做了哪些列名映射）"
+  "nameSamples": ["张三", "李四", "王五"],
+  "sourceLabels": { "name": "姓名", "语文": "语文" },
+  "notes": ""
 }
 
 规则：
-1. 列名不要求与标准名一致；按语义识别即可
-2. subjectColumns 的 key 用规范科目名（语文/数学/英语/物理/化学/生物/政治/历史/地理/体育等）；有 preferredSubjects 时尽量对齐
-3. 忽略总分、合计、平均分、排名、班级、等第、位次等非单科分列
-4. 不要编造不存在的列；拿不准的列不要硬映射
-5. sourceLabels 记录「标准字段/科目 → 原表头原文」，便于人工核对
+1. 按表头文字 + 下方数据样例推断列含义；列名不必标准
+2. subjectColumns 的 key 用规范科目名；有 preferredSubjects 时尽量对齐
+3. 忽略总分、合计、平均分、班级、等第；班级排名可忽略（App 会重算）
+3b. 若表头有「折算排名/赋分排名」「年级排名/校级排名/位次」或「语文排名」等列，不要放进 subjectColumns（本地会单独读取这些排名列）
+4. 不要编造不存在的列
+5. nameColumn 必须指向学生姓名列（每人不同的人名）。场次/类别/考试类型列只能用于推断 category，严禁作为 nameColumn
+6. 若提供了本班已知学生名单，nameColumn 必须选与名单重合最多的那一列
+7. nameSamples 必须从 nameColumn 原样抄写 3~5 个单元格，禁止编造
 ''',
-      user: '''
+      },
+      {
+        'role': 'user',
+        'content': '''
 工作表名：$sheetName
 本班已知学生（供参考）：$namesHint
 希望对齐的科目：$subjectsHint
-说明：表头列名可能完全不标准，请按语义识别。
+请输出成绩表列映射 json。
 
 表格 TSV：
 $tsv
 ''',
-      temperature: 0.1,
-    );
+      },
+    ];
+  }
 
+  /// 识别任意成绩表的列结构（单轮；多轮纠错请用 [chatMessages] + [gradeTableMappingSeedMessages]）。
+  Future<Map<String, dynamic>> inferGradeTableMappingJson({
+    required String tsv,
+    required String sheetName,
+    List<String> knownStudentNames = const [],
+    List<String> preferredSubjects = const [],
+  }) async {
+    final messages = gradeTableMappingSeedMessages(
+      tsv: tsv,
+      sheetName: sheetName,
+      knownStudentNames: knownStudentNames,
+      preferredSubjects: preferredSubjects,
+    );
+    final raw = await chatMessages(
+      messages: messages,
+      temperature: 0.1,
+      jsonObject: true,
+    );
+    return decodeJsonObjectMap(raw, label: '成绩表结构');
+  }
+
+  /// 解析模型返回的 JSON 对象；失败抛 [DeepSeekAiException]。
+  Map<String, dynamic> decodeJsonObjectMap(String raw, {String label = '结构'}) {
     final jsonStr = _extractJsonObject(raw);
     try {
       final data = jsonDecode(jsonStr);
       if (data is! Map<String, dynamic>) {
-        throw const DeepSeekAiException('AI 返回的成绩表结构不是对象');
+        throw DeepSeekAiException('AI 返回的$label不是对象');
       }
       return data;
     } catch (e) {
       if (e is DeepSeekAiException) rethrow;
-      throw DeepSeekAiException('无法解析 AI 成绩表结构：$e\n原文：$raw');
+      throw DeepSeekAiException('无法解析 AI $label：$e\n原文：$raw');
     }
   }
 
-  /// 识别任意课表（长表或矩阵）的列/格结构。
-  Future<Map<String, dynamic>> inferTimetableMappingJson({
+  /// 课表结构识别：初始多轮 messages（配合 json_object）。
+  List<Map<String, String>> timetableMappingSeedMessages({
     required String tsv,
     required String sheetName,
     List<String> knownClassTitles = const [],
-  }) async {
+  }) {
     final classHint = knownClassTitles.isEmpty
         ? '（未提供）'
         : knownClassTitles.take(40).join('、');
-
-    final raw = await chat(
-      system: '''
+    return [
+      {
+        'role': 'system',
+        'content': '''
 你是中小学课表结构识别器。用户提供带行号 TSV（列从 0 起算；行号 R0、R1…）。
-表头列名不固定：可能是「星期一/周一/Mon」「第1节/一节/Period1」「课程/科目」「班级名称」等。
-只输出一个 JSON，不要 markdown。
+你必须只输出一个合法 json 对象（不要 markdown）。
 
-支持两种 layout：
-
-1) "list"（长表：每行一节课）
+EXAMPLE JSON OUTPUT（长表 list）:
 {
   "layout": "list",
   "headerRowIndex": 0,
@@ -408,62 +536,74 @@ $tsv
   "subjectColumn": 2,
   "classColumn": 3,
   "className": "",
-  "sourceLabels": { "weekday": "原表头", "period": "原表头", "subject": "原表头", "class": "原表头" },
+  "sourceLabels": { "weekday": "星期", "period": "节次", "subject": "科目" },
   "notes": ""
 }
 
-2) "matrix"（矩阵：表头为星期，行为节次，单元格为科目）
+EXAMPLE JSON OUTPUT（矩阵 matrix）:
 {
   "layout": "matrix",
   "headerRowIndex": 0,
   "periodColumn": 0,
   "weekdayColumns": { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5 },
   "className": "高一（1）班",
-  "sourceLabels": { "period": "节次原表头", "1": "周一原表头" },
+  "sourceLabels": { "period": "节次", "1": "周一" },
   "notes": ""
 }
-weekdayColumns 的 key 必须是 "1"-"7"（周一=1 … 周日=7）。
 
 规则：
-1. 列名不要求标准，按语义识别；中国中小学最常见是 matrix
-2. 忽略备课/教研等非上课内容时可在 notes 说明
-3. 不要编造不存在的列
+1. 中国中小学最常见是 matrix；表头为星期、行为节次
+2. weekdayColumns 的 key 必须是 "1"-"7"（周一=1 … 周日=7）
+3. 不要编造不存在的列；拿不准的填 null / 省略
+4. 忽略备课/教研等非上课内容时可在 notes 说明
 ''',
-      user: '''
+      },
+      {
+        'role': 'user',
+        'content': '''
 工作表名：$sheetName
 本 App 已有班级（供参考）：$classHint
-说明：表头列名可能完全不标准，请按语义识别。
+请输出课表列映射 json。
 
 表格 TSV：
 $tsv
 ''',
-      temperature: 0.1,
-    );
-
-    final jsonStr = _extractJsonObject(raw);
-    try {
-      final data = jsonDecode(jsonStr);
-      if (data is! Map<String, dynamic>) {
-        throw const DeepSeekAiException('AI 返回的课表结构不是对象');
-      }
-      return data;
-    } catch (e) {
-      if (e is DeepSeekAiException) rethrow;
-      throw DeepSeekAiException('无法解析 AI 课表结构：$e\n原文：$raw');
-    }
+      },
+    ];
   }
 
-  /// 识别任意学生花名册 / 档案表的列结构。
-  Future<Map<String, dynamic>> inferStudentRosterMappingJson({
+  /// 识别任意课表（长表或矩阵）的列/格结构。
+  Future<Map<String, dynamic>> inferTimetableMappingJson({
     required String tsv,
     required String sheetName,
+    List<String> knownClassTitles = const [],
   }) async {
-    final raw = await chat(
-      system: '''
-你是中小学学生花名册结构识别器。用户提供带行号 TSV（列从 0 起算；行号 R0、R1…）。
-表头列名不固定：可能是「姓名/名字/学生姓名/学员」「学号/学籍号/考号/编号」「家长电话/手机号」「住址/家庭地址」「组别/小组」「班干部/职务」「出生日期/生日」等。
-只输出一个 JSON，不要 markdown。
+    final messages = timetableMappingSeedMessages(
+      tsv: tsv,
+      sheetName: sheetName,
+      knownClassTitles: knownClassTitles,
+    );
+    final raw = await chatMessages(
+      messages: messages,
+      temperature: 0.1,
+      jsonObject: true,
+    );
+    return decodeJsonObjectMap(raw, label: '课表结构');
+  }
 
+  /// 学生花名册结构识别：初始多轮 messages。
+  List<Map<String, String>> studentRosterMappingSeedMessages({
+    required String tsv,
+    required String sheetName,
+  }) {
+    return [
+      {
+        'role': 'system',
+        'content': '''
+你是中小学学生花名册结构识别器。用户提供带行号 TSV（列从 0 起算；行号 R0、R1…）。
+你必须只输出一个合法 json 对象（不要 markdown）。
+
+EXAMPLE JSON OUTPUT:
 {
   "headerRowIndex": 0,
   "nameColumn": 0,
@@ -475,37 +615,46 @@ $tsv
   "groupColumn": null,
   "roleColumn": null,
   "birthdayColumn": null,
-  "sourceLabels": { "name": "原表头", "studentNo": "原表头", "phone": "原表头" },
-  "notes": "一句说明（含列名映射）"
+  "nameSamples": ["张三", "李四", "王五"],
+  "sourceLabels": { "name": "姓名", "studentNo": "学号" },
+  "notes": ""
 }
 
 规则：
-1. 列名不必标准，按语义识别；nameColumn 必填
-2. 没有的列填 null
-3. 忽略序号、班级、排名等无关列
-4. 不要编造不存在的列
+1. nameColumn 必填，必须指向学生姓名列（每人不同的人名），禁止把序号/班级/组别当姓名
+2. 没有的列填 null；不要编造不存在的列
+3. nameSamples 必须从 nameColumn 原样抄写 3~5 个单元格
+4. 忽略序号、班级、排名等无关列
 ''',
-      user: '''
+      },
+      {
+        'role': 'user',
+        'content': '''
 工作表名：$sheetName
-说明：表头列名可能完全不标准，请按语义识别。
+请输出花名册列映射 json。
 
 表格 TSV：
 $tsv
 ''',
-      temperature: 0.1,
-    );
+      },
+    ];
+  }
 
-    final jsonStr = _extractJsonObject(raw);
-    try {
-      final data = jsonDecode(jsonStr);
-      if (data is! Map<String, dynamic>) {
-        throw const DeepSeekAiException('AI 返回的花名册结构不是对象');
-      }
-      return data;
-    } catch (e) {
-      if (e is DeepSeekAiException) rethrow;
-      throw DeepSeekAiException('无法解析 AI 花名册结构：$e\n原文：$raw');
-    }
+  /// 识别任意学生花名册 / 档案表的列结构。
+  Future<Map<String, dynamic>> inferStudentRosterMappingJson({
+    required String tsv,
+    required String sheetName,
+  }) async {
+    final messages = studentRosterMappingSeedMessages(
+      tsv: tsv,
+      sheetName: sheetName,
+    );
+    final raw = await chatMessages(
+      messages: messages,
+      temperature: 0.1,
+      jsonObject: true,
+    );
+    return decodeJsonObjectMap(raw, label: '花名册结构');
   }
 
   static String _extractJsonObject(String text) {

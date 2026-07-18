@@ -1366,12 +1366,24 @@ class ExamScore {
   final Map<String, double> scores;
   final String remark;
 
+  /// 折算/赋分排名（仅导入，App 无法计算）
+  final int? convertedRank;
+
+  /// 年级/校级排名（仅导入）
+  final int? gradeRank;
+
+  /// 官方单科位次（仅导入），key=科目名
+  final Map<String, int> subjectRanks;
+
   const ExamScore({
     required this.id,
     required this.examId,
     required this.studentId,
     required this.scores,
     this.remark = '',
+    this.convertedRank,
+    this.gradeRank,
+    this.subjectRanks = const {},
   });
 
   double? scoreOf(String subject) => scores[subject];
@@ -1381,12 +1393,42 @@ class ExamScore {
     return scores.values.fold(0.0, (a, b) => a + b);
   }
 
+  ExamScore copyWith({
+    String? id,
+    String? examId,
+    String? studentId,
+    Map<String, double>? scores,
+    String? remark,
+    int? convertedRank,
+    int? gradeRank,
+    Map<String, int>? subjectRanks,
+    bool clearConvertedRank = false,
+    bool clearGradeRank = false,
+  }) {
+    return ExamScore(
+      id: id ?? this.id,
+      examId: examId ?? this.examId,
+      studentId: studentId ?? this.studentId,
+      scores: scores ?? this.scores,
+      remark: remark ?? this.remark,
+      convertedRank:
+          clearConvertedRank ? null : (convertedRank ?? this.convertedRank),
+      gradeRank: clearGradeRank ? null : (gradeRank ?? this.gradeRank),
+      subjectRanks: subjectRanks ?? this.subjectRanks,
+    );
+  }
+
   Map<String, Object?> toMap() => {
         'id': id,
         'exam_id': examId,
         'student_id': studentId,
         'scores': scores.entries.map((e) => '${e.key}:${e.value}').join('|'),
         'remark': remark,
+        'converted_rank': convertedRank,
+        'grade_rank': gradeRank,
+        'subject_ranks': subjectRanks.entries
+            .map((e) => '${e.key}:${e.value}')
+            .join('|'),
       };
 
   factory ExamScore.fromMap(Map<String, Object?> map) {
@@ -1401,12 +1443,26 @@ class ExamScore {
         if (key.isNotEmpty && val != null) scores[key] = val;
       }
     }
+    final subjectRanks = <String, int>{};
+    final sr = (map['subject_ranks'] as String?) ?? '';
+    if (sr.trim().isNotEmpty) {
+      for (final part in sr.split('|')) {
+        final i = part.lastIndexOf(':');
+        if (i <= 0) continue;
+        final key = part.substring(0, i).trim();
+        final val = int.tryParse(part.substring(i + 1).trim());
+        if (key.isNotEmpty && val != null) subjectRanks[key] = val;
+      }
+    }
     return ExamScore(
       id: map['id']! as String,
       examId: map['exam_id']! as String,
       studentId: map['student_id']! as String,
       scores: scores,
       remark: (map['remark'] as String?) ?? '',
+      convertedRank: map['converted_rank'] as int?,
+      gradeRank: map['grade_rank'] as int?,
+      subjectRanks: subjectRanks,
     );
   }
 }

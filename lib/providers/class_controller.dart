@@ -1842,7 +1842,8 @@ class ClassController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveExam({
+  /// 保存考试元数据，返回考试 id（新建引导录入用）
+  Future<String> saveExam({
     String? id,
     required String title,
     required String category,
@@ -1879,6 +1880,7 @@ class ClassController extends ChangeNotifier {
     exams = await _repo.getExams();
     examScoresByExam.putIfAbsent(exam.id, () => const []);
     notifyListeners();
+    return exam.id;
   }
 
   Future<void> deleteExam(String id) async {
@@ -1933,16 +1935,19 @@ class ClassController extends ChangeNotifier {
     required Map<String, double> scores,
     String remark = '',
     String? id,
+    int? convertedRank,
+    int? gradeRank,
+    Map<String, int>? subjectRanks,
+    bool mergeRanksFromExisting = true,
   }) async {
-    String? existingId = id;
-    if (existingId == null) {
-      for (final s in scoresOfExam(examId)) {
-        if (s.studentId == studentId) {
-          existingId = s.id;
-          break;
-        }
+    ExamScore? existing;
+    for (final s in scoresOfExam(examId)) {
+      if (s.studentId == studentId || (id != null && s.id == id)) {
+        existing = s;
+        break;
       }
     }
+    final existingId = id ?? existing?.id;
     await _repo.upsertExamScore(
       ExamScore(
         id: existingId ?? _uuid.v4(),
@@ -1950,10 +1955,100 @@ class ClassController extends ChangeNotifier {
         studentId: studentId,
         scores: scores,
         remark: remark.trim(),
+        convertedRank: convertedRank ??
+            (mergeRanksFromExisting ? existing?.convertedRank : null),
+        gradeRank: gradeRank ??
+            (mergeRanksFromExisting ? existing?.gradeRank : null),
+        subjectRanks: subjectRanks ??
+            (mergeRanksFromExisting
+                ? (existing?.subjectRanks ?? const {})
+                : const {}),
       ),
     );
     examScoresByExam[examId] = await _repo.getExamScores(examId);
     notifyListeners();
+  }
+
+  /// dense rank：同分同名次，下一档名次连续（例：1,1,2）
+  static Map<String, int> denseRanksByValue(
+    Iterable<(String id, double value)> items,
+  ) {
+    final sorted = [...items]..sort((a, b) => b.$2.compareTo(a.$2));
+    final out = <String, int>{};
+    var rank = 0;
+    double? prev;
+    var distinct = 0;
+    for (final (id, value) in sorted) {
+      if (prev == null || value != prev) {
+        distinct++;
+        rank = distinct;
+        prev = value;
+      }
+      out[id] = rank;
+    }
+    return out;
+  }
+
+  /// 班内总分排名 studentId -> rank
+  Map<String, int> classRankByTotal(String examId) {
+    final items = <(String, double)>[
+      for (final s in scoresOfExam(examId))
+        if (s.scores.isNotEmpty) (s.studentId, s.total),
+    ];
+    return denseRanksByValue(items);
+  }
+
+  /// 班内单科排名
+  Map<String, int> classRankBySubject(String examId, String subject) {
+    final list = <(String, double)>[];
+    for (final s in scoresOfExam(examId)) {
+      final v = s.scoreOf(subject);
+      if (v != null) list.add((s.studentId, v));
+    }
+    return denseRanksByValue(list);
+  }
+
+  Future<String> exportExamFilledFile(String examId) async {
+    final exam = examById(examId);
+    if (exam == null) throw StateError('考试不存在');
+    final classTitle = currentClass?.displayTitle ?? profile.displayTitle;
+    final ranks = classRankByTotal(examId);
+    final bytes = ExamScoreExcel.buildFilledBytes(
+      exam: exam,
+      classTitle: classTitle,
+      students: students,
+      scores: scoresOfExam(examId),
+      classRanksByStudentId: ranks,
+    );
+    final dir = await getApplicationDocumentsDirectory();
+    final safeClass = classTitle.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final safeTitle = exam.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final file = File(p.join(dir.path, '${safeClass}_$safeTitle.xlsx'));
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  Future<void> deleteExamScore({
+    required String examId,
+    required String scoreId,
+  }) async {
+    await _repo.deleteExamScore(scoreId);
+    examScoresByExam[examId] = await _repo.getExamScores(examId);
+    notifyListeners();
+  }
+
+  /// 某学生已加载成绩中的历次考试（需先 ensureExamScores / ensureAllExamScores）
+  List<(Exam, ExamScore)> examScoresOfStudent(String studentId) {
+    final out = <(Exam, ExamScore)>[];
+    for (final e in exams) {
+      for (final s in scoresOfExam(e.id)) {
+        if (s.studentId == studentId) {
+          out.add((e, s));
+          break;
+        }
+      }
+    }
+    return out;
   }
 
   Future<String> exportExamTemplateFile(String examId) async {
@@ -2065,13 +2160,36 @@ class ClassController extends ChangeNotifier {
         scores.addAll(row.scores);
       }
       final id = existingByStudent[stu.id] ?? _uuid.v4();
+      ExamScore? prev;
+      for (final s in scoresOfExam(examId)) {
+        if (s.id == id) {
+          prev = s;
+          break;
+        }
+      }
+      final mergedSubjectRanks = <String, int>{
+        ...?prev?.subjectRanks,
+        ...row.subjectRanks,
+      };
+      final writeScores =
+          scores.isNotEmpty ? scores : (prev?.scores ?? <String, double>{});
+      if (writeScores.isEmpty &&
+          row.convertedRank == null &&
+          row.gradeRank == null &&
+          mergedSubjectRanks.isEmpty) {
+        skipped++;
+        continue;
+      }
       await _repo.upsertExamScore(
         ExamScore(
           id: id,
           examId: examId,
           studentId: stu.id,
-          scores: scores,
-          remark: row.remark,
+          scores: writeScores,
+          remark: row.remark.isNotEmpty ? row.remark : (prev?.remark ?? ''),
+          convertedRank: row.convertedRank ?? prev?.convertedRank,
+          gradeRank: row.gradeRank ?? prev?.gradeRank,
+          subjectRanks: mergedSubjectRanks,
         ),
       );
       existingByStudent[stu.id] = id;
@@ -2200,8 +2318,23 @@ class ClassController extends ChangeNotifier {
   }
 
   List<ExamScore> rankedScores(String examId) {
-    final list = [...scoresOfExam(examId)];
+    final list = [
+      for (final s in scoresOfExam(examId))
+        if (s.scores.isNotEmpty) s,
+    ];
     list.sort((a, b) => b.total.compareTo(a.total));
+    return list;
+  }
+
+  /// 按单科分数排序（高到低）
+  List<ExamScore> rankedScoresBySubject(String examId, String subject) {
+    final list = [
+      for (final s in scoresOfExam(examId))
+        if (s.scoreOf(subject) != null) s,
+    ];
+    list.sort(
+      (a, b) => b.scoreOf(subject)!.compareTo(a.scoreOf(subject)!),
+    );
     return list;
   }
 
@@ -2461,6 +2594,81 @@ class ClassController extends ChangeNotifier {
       ),
     );
     await refreshTodos();
+  }
+
+  /// 批量新增待办：空标题跳过；与未完成同名则跳过。返回实际新增/跳过数。
+  Future<({int added, int skipped})> addTodos(List<String> titles) async {
+    final openTitles = {
+      for (final t in todos)
+        if (!t.done) t.title.trim(),
+    };
+    final seen = <String>{};
+    var added = 0;
+    var skipped = 0;
+    var order = todos.length;
+
+    for (final raw in titles) {
+      final t = raw.trim();
+      if (t.isEmpty) {
+        skipped++;
+        continue;
+      }
+      if (seen.contains(t) || openTitles.contains(t)) {
+        skipped++;
+        continue;
+      }
+      seen.add(t);
+      openTitles.add(t);
+      await _repo.upsertTodo(
+        TeacherTodo(
+          id: _uuid.v4(),
+          title: t,
+          sortOrder: order++,
+          createdAt: DateTime.now(),
+        ),
+      );
+      added++;
+    }
+    if (added > 0) await refreshTodos();
+    return (added: added, skipped: skipped);
+  }
+
+  /// 合并 AI 提议的加减分规则：同 reason 覆盖。返回新增/更新数。
+  Future<({int added, int updated, int skipped})> mergePointPresets(
+    List<PointReasonPreset> incoming,
+  ) async {
+    final byReason = <String, PointReasonPreset>{
+      for (final p in pointPresets) p.reason: p,
+    };
+    var added = 0;
+    var updated = 0;
+    var skipped = 0;
+
+    for (final raw in incoming) {
+      final reason = raw.reason.trim();
+      if (reason.isEmpty || raw.delta == 0) {
+        skipped++;
+        continue;
+      }
+      final next = PointReasonPreset(reason: reason, delta: raw.delta);
+      if (byReason.containsKey(reason)) {
+        updated++;
+      } else {
+        added++;
+      }
+      byReason[reason] = next;
+    }
+
+    final list = byReason.values.toList()
+      ..sort((a, b) {
+        if (a.delta >= 0 && b.delta < 0) return -1;
+        if (a.delta < 0 && b.delta >= 0) return 1;
+        return a.reason.compareTo(b.reason);
+      });
+    if (added > 0 || updated > 0) {
+      await savePointPresets(list);
+    }
+    return (added: added, updated: updated, skipped: skipped);
   }
 
   Future<void> toggleTodo(String id) async {

@@ -74,7 +74,7 @@ abstract final class ClassFeatures {
     ),
     ClassFeatureDef(
       id: ClassFeatureIds.grades,
-      title: '成绩分析',
+      title: '成绩',
       group: ClassFeatureGroup.teaching,
       defaultHomeroom: true,
       defaultSubject: true,

@@ -8,6 +8,7 @@ import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/date_picker_sheet.dart';
 
 String _numText(double v) =>
     v == v.roundToDouble() ? '${v.round()}' : '$v';
@@ -52,8 +53,12 @@ class ExamEditScreen extends StatefulWidget {
   const ExamEditScreen({super.key, this.existing});
   final Exam? existing;
 
-  static Future<void> push(BuildContext context, {Exam? existing}) {
-    return Navigator.of(context).push(
+  /// 从编辑页删除考试时返回此标记，详情页应一并关闭
+  static const deletedToken = '__exam_deleted__';
+
+  /// 返回保存后的考试 id；删除返回 [deletedToken]；取消为 null
+  static Future<String?> push(BuildContext context, {Exam? existing}) {
+    return Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => ExamEditScreen(existing: existing),
       ),
@@ -105,7 +110,12 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
   }
 
   Future<void> _save() async {
-    if (_title.text.trim().isEmpty) return;
+    if (_title.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请填写考试名称')),
+      );
+      return;
+    }
     if (_subjects.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('请至少添加一个科目')),
@@ -113,7 +123,7 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
       return;
     }
     final ctrl = context.read<ClassController>();
-    await ctrl.saveExam(
+    final id = await ctrl.saveExam(
       id: widget.existing?.id,
       title: _title.text,
       category: _category,
@@ -123,14 +133,40 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
       passScore: double.tryParse(_pass.text) ?? 60,
       note: _note.text,
     );
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.pop(context, id);
+  }
+
+  Future<void> _delete() async {
+    final existing = widget.existing;
+    if (existing == null) return;
+    final ok = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: Text('删除「${existing.title}」？'),
+        content: const Text('成绩记录与已上传的考试资料将一并删除。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await context.read<ClassController>().deleteExam(existing.id);
+    if (mounted) Navigator.pop(context, ExamEditScreen.deletedToken);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: PageAppBar(
-        title: Text(widget.existing == null ? '新建考试' : '编辑考试'),
+        title: Text(widget.existing == null ? '新建成绩报告' : '编辑考试'),
         actions: [
           TextButton(onPressed: _save, child: const Text('保存')),
         ],
@@ -149,10 +185,13 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
               labelText: '名称',
               hintText: '如：2025 秋期末考',
             ),
+            textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: 16),
-          Text('类别（可自由添加）',
-              style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel)),
+          Text(
+            '类别',
+            style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -196,8 +235,8 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
             onTap: () async {
               final now = DateTime.now();
               final initial = DateTime.tryParse(_examDate) ?? now;
-              final picked = await showDatePicker(
-                context: context,
+              final picked = await showAppDatePicker(
+                context,
                 initialDate: initial,
                 firstDate: DateTime(now.year - 5),
                 lastDate: DateTime(now.year + 2),
@@ -229,8 +268,10 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          Text('科目（可增删）',
-              style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel)),
+          Text(
+            '科目（默认为语数英，可增删）',
+            style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -265,6 +306,14 @@ class _ExamEditScreenState extends State<ExamEditScreen> {
           ),
           const SizedBox(height: 24),
           FilledButton(onPressed: _save, child: const Text('保存')),
+          if (widget.existing != null) ...[
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _delete,
+              style: TextButton.styleFrom(foregroundColor: AppTheme.destructive),
+              child: const Text('删除考试'),
+            ),
+          ],
         ],
       ),
     );

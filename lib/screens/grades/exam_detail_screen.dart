@@ -1,10 +1,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:smart_class/services/file_export.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
@@ -12,15 +10,22 @@ import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/grades/ai_exam_assist_screen.dart';
 import 'package:smart_class/screens/grades/ai_exam_import_screen.dart';
 import 'package:smart_class/screens/grades/exam_edit_screen.dart';
+import 'package:smart_class/screens/grades/exam_scoresheet.dart';
+import 'package:smart_class/services/file_export.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/data_charts.dart';
 
 class ExamDetailScreen extends StatefulWidget {
-  const ExamDetailScreen({super.key, required this.examId});
+  const ExamDetailScreen({
+    super.key,
+    required this.examId,
+    this.promptEnterScores = false,
+  });
 
   final String examId;
+  final bool promptEnterScores;
 
   static String fmt(double v) =>
       v == v.roundToDouble() ? '${v.round()}' : v.toStringAsFixed(1);
@@ -29,14 +34,36 @@ class ExamDetailScreen extends StatefulWidget {
   State<ExamDetailScreen> createState() => _ExamDetailScreenState();
 }
 
-class _ExamDetailScreenState extends State<ExamDetailScreen> {
+class _ExamDetailScreenState extends State<ExamDetailScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+  final _rankSearch = TextEditingController();
+  String _rankQuery = '';
+  String? _subjectRankFilter; // null = 总分
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _tabs = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<ClassController>().ensureExamScores(widget.examId);
+      await context.read<ClassController>().ensureExamScores(widget.examId);
+      if (!mounted) return;
+      if (widget.promptEnterScores) {
+        final exam = context.read<ClassController>().examById(widget.examId);
+        if (exam != null &&
+            context.read<ClassController>().scoresOfExam(exam.id).isEmpty) {
+          await _showExcelActions(context, exam);
+        }
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    _rankSearch.dispose();
+    super.dispose();
   }
 
   @override
@@ -51,238 +78,85 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
     }
 
     final ranked = ctrl.rankedScores(widget.examId);
-    final stats = ctrl.analyzeExam(widget.examId);
 
     return Scaffold(
       appBar: PageAppBar(
         title: Text(exam.title),
         actions: [
           IconButton(
-            tooltip: '编辑考试',
-            onPressed: () => ExamEditScreen.push(context, existing: exam),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            tooltip: '上传资料',
-            onPressed: () => _pickExamFiles(context, exam.id),
-            icon: const Icon(Icons.upload_file_outlined),
+            tooltip: '导出本班成绩',
+            onPressed: () => _exportFilled(context, exam.id),
+            icon: const Icon(AppIcons.share),
           ),
           IconButton(
             tooltip: '导入成绩',
             onPressed: () => _showExcelActions(context, exam),
-            icon: const Icon(AppIcons.fileSheet),
+            icon: const Icon(AppIcons.download),
           ),
-          IconButton(
-            tooltip: '删除',
-            onPressed: () => _deleteExam(context, exam),
-            icon: Icon(AppIcons.trash, color: AppTheme.destructive),
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            icon: const Icon(AppIcons.moreVert),
+            onSelected: (v) {
+              switch (v) {
+                case 'edit':
+                  _openEdit(context, exam);
+                case 'template':
+                  _downloadTemplate(context, exam.id);
+                case 'upload':
+                  _pickExamFiles(context, exam.id);
+                case 'delete':
+                  _deleteExam(context, exam);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('编辑考试')),
+              PopupMenuItem(value: 'template', child: Text('下载空白模板')),
+              PopupMenuItem(value: 'upload', child: Text('上传资料')),
+              PopupMenuItem(
+                value: 'delete',
+                child: Text('删除考试', style: TextStyle(color: Color(0xFFFF3B30))),
+              ),
+            ],
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 28),
+      body: Column(
         children: [
-          const SizedBox(height: 8),
-          GroupedSection(
-            header: '概览',
-            children: [
-              GroupedTile(
-                title: exam.category,
-                subtitle:
-                    '${exam.examDate} · 满分 ${ExamDetailScreen.fmt(exam.fullScore)} · 及格 ${ExamDetailScreen.fmt(exam.passScore)}',
-              ),
-              GroupedTile(
-                title: '科目',
-                subtitle: exam.subjects.isEmpty
-                    ? '未设置'
-                    : exam.subjects.join('、'),
-              ),
-              GroupedTile(
-                title: '已录成绩',
-                trailing: Text('${ranked.length} 人'),
-              ),
-              if (exam.note.isNotEmpty)
-                GroupedTile(title: '备注', subtitle: exam.note),
-            ],
+          Material(
+            color: AppTheme.bg,
+            child: TabBar(
+              controller: _tabs,
+              labelColor: AppTheme.label,
+              unselectedLabelColor: AppTheme.tertiaryLabel,
+              indicatorColor: AppTheme.blue,
+              tabs: [
+                const Tab(text: '成绩表'),
+                Tab(text: ranked.isEmpty ? '分析' : '分析 · ${ranked.length}'),
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          Builder(
-            builder: (context) {
-              final files = ctrl.filesOfExam(exam.id);
-              return GroupedSection(
-                header: '考试资料',
-                footer: files.isEmpty
-                    ? '可上传试卷、答题卡、分析表、PPT 等，保存在本机'
-                    : '点文件打开；长按删除',
-                children: [
-                  GroupedTile(
-                    title: '上传文件',
-                    subtitle: '支持多选',
-                    leading:
-                        Icon(Icons.add_circle_outline, color: AppTheme.blue),
-                    onTap: () => _pickExamFiles(context, exam.id),
-                  ),
-                  for (final f in files)
-                    GroupedTile(
-                      title: f.fileName,
-                      subtitle: _formatSize(f.sizeBytes),
-                      leading: Icon(
-                        Icons.insert_drive_file_outlined,
-                        color: AppTheme.blue,
-                      ),
-                      onTap: () => _openExamFile(context, f),
-                      onLongPress: () => _deleteExamFile(context, f),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 18),
-          GroupedSection(
-            header: '成绩分析',
-            footer: ranked.isEmpty ? '导入 Excel 或手动录入后显示均分、最高分、及格率等' : null,
-            children: [
-              if (stats.isEmpty || ranked.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    '暂无数据',
-                    style: TextStyle(color: AppTheme.tertiaryLabel),
-                  ),
-                )
-              else
-                for (final s in stats)
-                  GroupedTile(
-                    title: s.label,
-                    subtitle: s.count == 0
-                        ? '无数据'
-                        : '均分 ${ExamDetailScreen.fmt(s.average)} · 最高 ${ExamDetailScreen.fmt(s.max)} · 最低 ${ExamDetailScreen.fmt(s.min)}',
-                    trailing: s.count == 0
-                        ? const Text('—')
-                        : Text(
-                            '及格 ${(s.passRate * 100).toStringAsFixed(0)}%',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.tertiaryLabel,
-                            ),
-                          ),
-                  ),
-              if (ranked.isNotEmpty) ...[
-                GroupedTile(
-                  title: 'AI 成绩解读',
-                  subtitle: '亮点、薄弱与跟进建议，一键生成',
-                  leading: Icon(Icons.auto_awesome, color: AppTheme.blue),
-                  onTap: () => AiExamAssistScreen.open(
-                    context,
-                    examId: exam.id,
-                    mode: AiExamAssistMode.analyze,
-                  ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                ExamScoresheet(
+                  exam: exam,
+                  onImport: () => _showExcelActions(context, exam),
+                  onExport: () => _exportFilled(context, exam.id),
                 ),
-                GroupedTile(
-                  title: '根据本次考试生成班会',
-                  subtitle: '主题、流程、主持话术，可存工作留痕',
-                  leading: Icon(Icons.groups_outlined, color: AppTheme.blue),
-                  onTap: () => AiExamAssistScreen.open(
-                    context,
-                    examId: exam.id,
-                    mode: AiExamAssistMode.classMeeting,
-                  ),
+                _AnalysisTab(
+                  exam: exam,
+                  ranked: ranked,
+                  rankSearch: _rankSearch,
+                  rankQuery: _rankQuery,
+                  subjectFilter: _subjectRankFilter,
+                  onRankQuery: (v) => setState(() => _rankQuery = v),
+                  onSubjectFilter: (v) => setState(() => _subjectRankFilter = v),
+                  onGoScoresheet: () => _tabs.animateTo(0),
+                  onImport: () => _showExcelActions(context, exam),
+                  filesSection: _filesSection(context, ctrl, exam),
                 ),
               ],
-            ],
-          ),
-          if (ranked.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ChartCard(
-              title: '各科均分',
-              height: 200,
-              child: SimpleBarChart(
-                items: [
-                  for (final s in stats)
-                    if (s.label != '总分' && s.count > 0)
-                      ChartBarItem(
-                        label: s.label,
-                        value: s.average,
-                        color: AppTheme.blue,
-                      ),
-                ],
-                maxY: exam.fullScore,
-              ),
-            ),
-            ChartCard(
-              title: '各科及格率',
-              height: 200,
-              child: SimpleBarChart(
-                items: [
-                  for (final s in stats)
-                    if (s.label != '总分' && s.count > 0)
-                      ChartBarItem(
-                        label: s.label,
-                        value: s.passRate * 100,
-                        color: const Color(0xFF34C759),
-                      ),
-                ],
-                maxY: 100,
-                showAsPercent: true,
-                valueSuffix: '%',
-              ),
-            ),
-            ChartCard(
-              title: '单科最高 / 最低',
-              height: 200,
-              footer: '蓝柱为最高分，橙柱为最低分',
-              child: _HighLowBarChart(stats: stats, fullScore: exam.fullScore),
-            ),
-            ChartCard(
-              title: '总分分数段',
-              height: 180,
-              child: SimpleDonutChart(
-                slices: _totalBands(exam, ranked),
-              ),
-            ),
-            ChartCard(
-              title: '总分 Top 8',
-              height: (ranked.length.clamp(1, 8) * 28.0) + 8,
-              child: HorizontalRankChart(
-                items: [
-                  for (final s in ranked.take(8))
-                    ChartBarItem(
-                      label: ctrl.studentById(s.studentId)?.name ?? '?',
-                      value: s.total,
-                    ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          GroupedSection(
-            header: '总分排行',
-            children: [
-              if (ranked.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    '暂无成绩',
-                    style: TextStyle(color: AppTheme.tertiaryLabel),
-                  ),
-                )
-              else
-                for (var i = 0; i < ranked.length; i++)
-                  _ScoreTile(
-                    rank: i + 1,
-                    exam: exam,
-                    score: ranked[i],
-                    onTap: () => _editScore(context, exam, ranked[i]),
-                  ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: OutlinedButton.icon(
-              onPressed: () => _editScore(context, exam, null),
-              icon: const Icon(AppIcons.plus, size: 18),
-              label: const Text('手动录入成绩'),
             ),
           ),
         ],
@@ -290,45 +164,67 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
     );
   }
 
-  static List<ChartSlice> _totalBands(Exam exam, List<ExamScore> ranked) {
-    final full = exam.fullScore * exam.subjects.length;
-    final pass = exam.passScore * exam.subjects.length;
-    final excellent = full * 0.85;
-    final good = full * 0.75;
-    var a = 0, b = 0, c = 0, d = 0;
-    for (final s in ranked) {
-      final t = s.total;
-      if (t >= excellent) {
-        a++;
-      } else if (t >= good) {
-        b++;
-      } else if (t >= pass) {
-        c++;
-      } else {
-        d++;
-      }
+  Future<void> _exportFilled(BuildContext context, String examId) async {
+    final ctrl = context.read<ClassController>();
+    try {
+      final saved = await FileExport.saveGenerated(
+        () => ctrl.exportExamFilledFile(examId),
+        dialogTitle: '导出本班成绩',
+      );
+      if (!context.mounted) return;
+      FileExport.showSavedSnackBar(context, saved);
+    } catch (e) {
+      FileExport.showErrorSnackBar(context, e);
     }
-    return [
-      ChartSlice(label: '优秀', value: a.toDouble(), color: const Color(0xFF34C759)),
-      ChartSlice(label: '良好', value: b.toDouble(), color: AppTheme.blue),
-      ChartSlice(label: '及格', value: c.toDouble(), color: const Color(0xFFFF9500)),
-      ChartSlice(label: '不及格', value: d.toDouble(), color: AppTheme.destructive),
-    ];
+  }
+
+  Widget _filesSection(
+    BuildContext context,
+    ClassController ctrl,
+    Exam exam,
+  ) {
+    final files = ctrl.filesOfExam(exam.id);
+    return GroupedSection(
+      header: '考试资料',
+      footer: files.isEmpty ? '可上传试卷、答题卡等' : '点文件打开；长按删除',
+      children: [
+        GroupedTile(
+          title: '上传文件',
+          leading: Icon(AppIcons.upload, color: AppTheme.blue),
+          onTap: () => _pickExamFiles(context, exam.id),
+        ),
+        for (final f in files)
+          GroupedTile(
+            title: f.fileName,
+            subtitle: _formatSize(f.sizeBytes),
+            leading: Icon(AppIcons.file, color: AppTheme.blue),
+            onTap: () => _openExamFile(context, f),
+            onLongPress: () => _deleteExamFile(context, f),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openEdit(BuildContext context, Exam exam) async {
+    final result = await ExamEditScreen.push(context, existing: exam);
+    if (result == ExamEditScreen.deletedToken && context.mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _showExcelActions(BuildContext context, Exam exam) async {
     await showCupertinoModalPopup<void>(
       context: context,
       builder: (ctx) => CupertinoActionSheet(
-        title: const Text('成绩 Excel'),
-        message: const Text('标准模板可直接导入；任意格式可用 AI 识别'),
+        title: const Text('导入成绩'),
+        message: const Text('可含折算/年级排名列；点单元格也可改分'),
         actions: [
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(ctx);
               _downloadTemplate(context, exam.id);
             },
-            child: const Text('下载成绩模板'),
+            child: const Text('下载空白模板'),
           ),
           CupertinoActionSheetAction(
             onPressed: () {
@@ -342,7 +238,7 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
               Navigator.pop(ctx);
               AiExamImportScreen.push(context, examId: exam.id);
             },
-            child: const Text('AI 智能导入（Excel/Word/TXT…）'),
+            child: const Text('AI 智能导入'),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
@@ -401,9 +297,6 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
       if (result.warnings.isNotEmpty) {
         msg.write('\n');
         msg.write(result.warnings.take(8).join('\n'));
-        if (result.warnings.length > 8) {
-          msg.write('\n…共 ${result.warnings.length} 条提示');
-        }
       }
       await showCupertinoDialog<void>(
         context: context,
@@ -431,7 +324,7 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
         title: Text('删除「${exam.title}」？'),
-        content: const Text('成绩记录与已上传的考试资料将一并删除。'),
+        content: const Text('成绩与考试资料将一并删除。'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx, false),
@@ -489,7 +382,7 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            res.message.isEmpty ? '无法打开文件，请安装对应应用' : res.message,
+            res.message.isEmpty ? '无法打开文件' : res.message,
           ),
         ),
       );
@@ -522,262 +415,288 @@ class _ExamDetailScreenState extends State<ExamDetailScreen> {
       await context.read<ClassController>().deleteExamFile(file);
     }
   }
-
-  Future<void> _editScore(
-    BuildContext context,
-    Exam exam,
-    ExamScore? existing,
-  ) async {
-    final ctrl = context.read<ClassController>();
-    String? studentId = existing?.studentId;
-    final controllers = <String, TextEditingController>{
-      for (final s in exam.subjects)
-        s: TextEditingController(
-          text: existing?.scoreOf(s) == null
-              ? ''
-              : ExamDetailScreen.fmt(existing!.scoreOf(s)!),
-        ),
-    };
-    final remark = TextEditingController(text: existing?.remark ?? '');
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            final selected = studentId == null
-                ? null
-                : ctrl.studentById(studentId!);
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 12,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      existing == null ? '录入成绩' : '编辑成绩',
-                      style: Theme.of(ctx).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(selected?.name ?? '选择学生'),
-                      subtitle: Text(
-                        selected == null
-                            ? '点此选择'
-                            : [
-                                if (selected.studentNo.isNotEmpty)
-                                  selected.studentNo,
-                                if (selected.groupName.isNotEmpty)
-                                  selected.groupName,
-                              ].join(' · '),
-                      ),
-                      trailing: const Icon(AppIcons.chevronRight),
-                      onTap: existing != null
-                          ? null
-                          : () async {
-                              final id = await _pickStudent(ctx, ctrl);
-                              if (id != null) setState(() => studentId = id);
-                            },
-                    ),
-                    const SizedBox(height: 8),
-                    for (final s in exam.subjects) ...[
-                      TextField(
-                        controller: controllers[s],
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(labelText: s),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    TextField(
-                      controller: remark,
-                      decoration: const InputDecoration(labelText: '备注'),
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () async {
-                        if (studentId == null) return;
-                        final scores = <String, double>{};
-                        for (final s in exam.subjects) {
-                          final raw = controllers[s]!.text.trim();
-                          if (raw.isEmpty) continue;
-                          final v = double.tryParse(raw);
-                          if (v != null) scores[s] = v;
-                        }
-                        if (scores.isEmpty) return;
-                        await ctrl.saveExamScore(
-                          examId: exam.id,
-                          studentId: studentId!,
-                          scores: scores,
-                          remark: remark.text,
-                          id: existing?.id,
-                        );
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('保存'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-    for (final c in controllers.values) {
-      c.dispose();
-    }
-    remark.dispose();
-  }
-
-  Future<String?> _pickStudent(
-    BuildContext context,
-    ClassController ctrl,
-  ) async {
-    return showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return SizedBox(
-          height: MediaQuery.of(ctx).size.height * 0.6,
-          child: Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('选择学生',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: ctrl.students.length,
-                  itemBuilder: (_, i) {
-                    final s = ctrl.students[i];
-                    return ListTile(
-                      title: Text(s.name),
-                      subtitle: Text(
-                        [
-                          if (s.studentNo.isNotEmpty) s.studentNo,
-                          if (s.groupName.isNotEmpty) s.groupName,
-                        ].join(' · '),
-                      ),
-                      onTap: () => Navigator.pop(ctx, s.id),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }
 
-class _HighLowBarChart extends StatelessWidget {
-  const _HighLowBarChart({required this.stats, required this.fullScore});
+class _AnalysisTab extends StatelessWidget {
+  const _AnalysisTab({
+    required this.exam,
+    required this.ranked,
+    required this.rankSearch,
+    required this.rankQuery,
+    required this.subjectFilter,
+    required this.onRankQuery,
+    required this.onSubjectFilter,
+    required this.onGoScoresheet,
+    required this.onImport,
+    required this.filesSection,
+  });
 
-  final List<SubjectStat> stats;
-  final double fullScore;
+  final Exam exam;
+  final List<ExamScore> ranked;
+  final TextEditingController rankSearch;
+  final String rankQuery;
+  final String? subjectFilter;
+  final ValueChanged<String> onRankQuery;
+  final ValueChanged<String?> onSubjectFilter;
+  final VoidCallback onGoScoresheet;
+  final VoidCallback onImport;
+  final Widget filesSection;
 
   @override
   Widget build(BuildContext context) {
-    final subjects = [
-      for (final s in stats)
-        if (s.label != '总分' && s.count > 0) s,
-    ];
-    if (subjects.isEmpty) {
-      return Center(
-        child: Text('暂无数据', style: TextStyle(color: AppTheme.tertiaryLabel)),
+    final ctrl = context.watch<ClassController>();
+    final stats = ctrl.analyzeExam(exam.id);
+    SubjectStat? totalStat;
+    for (final s in stats) {
+      if (s.label == '总分') {
+        totalStat = s;
+        break;
+      }
+    }
+
+    if (ranked.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 28, top: 8),
+        children: [
+          GroupedSection(
+            header: '分析',
+            footer: '先在成绩表录入或导入后显示均分与排行',
+            children: [
+              GroupedTile(
+                title: '去成绩表录入',
+                leading: Icon(AppIcons.fileSheet, color: AppTheme.blue),
+                onTap: onGoScoresheet,
+              ),
+              GroupedTile(
+                title: '导入成绩',
+                leading: Icon(AppIcons.download, color: AppTheme.blue),
+                onTap: onImport,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          filesSection,
+        ],
       );
     }
 
-    return BarChart(
-      BarChartData(
-        maxY: fullScore * 1.1,
-        minY: 0,
-        alignment: BarChartAlignment.spaceAround,
-        barTouchData: const BarTouchData(enabled: true),
-        titlesData: FlTitlesData(
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 32,
-              getTitlesWidget: (v, _) => Text(
-                v <= 0 ? '' : '${v.round()}',
-                style: TextStyle(fontSize: 10, color: AppTheme.tertiaryLabel),
+    final subjectList = subjectFilter == null
+        ? ranked
+        : ctrl.rankedScoresBySubject(exam.id, subjectFilter!);
+    final ranks = subjectFilter == null
+        ? ctrl.classRankByTotal(exam.id)
+        : ctrl.classRankBySubject(exam.id, subjectFilter!);
+
+    final q = rankQuery.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? subjectList
+        : [
+            for (final s in subjectList)
+              if ((ctrl.studentById(s.studentId)?.name ?? '')
+                      .toLowerCase()
+                      .contains(q) ||
+                  (ctrl.studentById(s.studentId)?.studentNo ?? '')
+                      .toLowerCase()
+                      .contains(q))
+                s,
+          ];
+
+    final passRate = totalStat == null || totalStat.count == 0
+        ? null
+        : totalStat.passRate;
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 28, top: 8),
+      children: [
+        GroupedSection(
+          header: '班级概览',
+          children: [
+            GroupedTile(
+              title: exam.category,
+              subtitle: '${exam.examDate} · ${exam.subjects.join('、')}',
+            ),
+            GroupedTile(
+              title: '已录人数',
+              trailing: Text('${ranked.length} 人'),
+            ),
+            if (totalStat != null && totalStat.count > 0)
+              GroupedTile(
+                title: '总分均分',
+                trailing: Text(ExamDetailScreen.fmt(totalStat.average)),
               ),
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 28,
-              getTitlesWidget: (v, meta) {
-                final i = v.toInt();
-                if (i < 0 || i >= subjects.length) {
-                  return const SizedBox.shrink();
-                }
-                final label = subjects[i].label;
-                return SideTitleWidget(
-                  meta: meta,
-                  child: Text(
-                    label.length > 2 ? label.substring(0, 2) : label,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.secondaryLabel,
-                    ),
+            if (passRate != null)
+              GroupedTile(
+                title: '及格率',
+                trailing: Text('${(passRate * 100).toStringAsFixed(0)}%'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ChartCard(
+          title: '各科均分',
+          height: 200,
+          child: SimpleBarChart(
+            items: [
+              for (final s in stats)
+                if (s.label != '总分' && s.count > 0)
+                  ChartBarItem(
+                    label: s.label,
+                    value: s.average,
+                    color: AppTheme.blue,
                   ),
-                );
-              },
-            ),
+            ],
+            maxY: exam.fullScore,
           ),
         ),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: AppTheme.separator.withValues(alpha: 0.5),
-            strokeWidth: 1,
-          ),
+        ChartCard(
+          title: '总分分数段',
+          height: 180,
+          child: SimpleDonutChart(slices: _totalBands(exam, ranked)),
         ),
-        borderData: FlBorderData(show: false),
-        barGroups: [
-          for (var i = 0; i < subjects.length; i++)
-            BarChartGroupData(
-              x: i,
-              barsSpace: 2,
-              barRods: [
-                BarChartRodData(
-                  toY: subjects[i].max,
-                  width: 8,
-                  color: AppTheme.blue,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(3),
-                  ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _RankChip(
+                  label: '总分',
+                  selected: subjectFilter == null,
+                  onTap: () => onSubjectFilter(null),
                 ),
-                BarChartRodData(
-                  toY: subjects[i].min,
-                  width: 8,
-                  color: const Color(0xFFFF9500),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(3),
+                for (final s in exam.subjects) ...[
+                  const SizedBox(width: 8),
+                  _RankChip(
+                    label: s,
+                    selected: subjectFilter == s,
+                    onTap: () => onSubjectFilter(s),
                   ),
-                ),
+                ],
               ],
             ),
-        ],
+          ),
+        ),
+        SearchField(
+          controller: rankSearch,
+          hint: '搜索学生',
+          onChanged: onRankQuery,
+        ),
+        GroupedSection(
+          header: subjectFilter == null
+              ? '总分排行 · ${ranked.length}'
+              : '$subjectFilter 排行 · ${subjectList.length}',
+          footer: '班内名次由分数计算；折算/年级名次来自导入',
+          children: [
+            if (filtered.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(18),
+                child: Text(
+                  '无匹配学生',
+                  style: TextStyle(color: AppTheme.tertiaryLabel),
+                ),
+              )
+            else
+              for (final score in filtered)
+                _ScoreTile(
+                  rank: ranks[score.studentId] ?? 0,
+                  exam: exam,
+                  score: score,
+                  subjectFilter: subjectFilter,
+                  onTap: onGoScoresheet,
+                ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        GroupedSection(
+          header: 'AI 助手',
+          children: [
+            GroupedTile(
+              title: 'AI 成绩解读',
+              leading: Icon(AppIcons.sparkles, color: AppTheme.blue),
+              onTap: () => AiExamAssistScreen.open(
+                context,
+                examId: exam.id,
+                mode: AiExamAssistMode.analyze,
+              ),
+            ),
+            GroupedTile(
+              title: '生成班会',
+              leading: Icon(AppIcons.usersGroup, color: AppTheme.blue),
+              onTap: () => AiExamAssistScreen.open(
+                context,
+                examId: exam.id,
+                mode: AiExamAssistMode.classMeeting,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        filesSection,
+      ],
+    );
+  }
+
+  static List<ChartSlice> _totalBands(Exam exam, List<ExamScore> ranked) {
+    final full = exam.fullScore * exam.subjects.length;
+    final pass = exam.passScore * exam.subjects.length;
+    final excellent = full * 0.85;
+    final good = full * 0.75;
+    var a = 0, b = 0, c = 0, d = 0;
+    for (final s in ranked) {
+      final t = s.total;
+      if (t >= excellent) {
+        a++;
+      } else if (t >= good) {
+        b++;
+      } else if (t >= pass) {
+        c++;
+      } else {
+        d++;
+      }
+    }
+    return [
+      ChartSlice(
+          label: '优秀', value: a.toDouble(), color: const Color(0xFF34C759)),
+      ChartSlice(label: '良好', value: b.toDouble(), color: AppTheme.blue),
+      ChartSlice(
+          label: '及格', value: c.toDouble(), color: const Color(0xFFFF9500)),
+      ChartSlice(
+          label: '不及格', value: d.toDouble(), color: AppTheme.destructive),
+    ];
+  }
+}
+
+class _RankChip extends StatelessWidget {
+  const _RankChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppTheme.label : AppTheme.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: selected ? AppTheme.bg : AppTheme.secondaryLabel,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -788,34 +707,44 @@ class _ScoreTile extends StatelessWidget {
     required this.rank,
     required this.exam,
     required this.score,
+    required this.subjectFilter,
     required this.onTap,
   });
 
   final int rank;
   final Exam exam;
   final ExamScore score;
+  final String? subjectFilter;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
     final stu = ctrl.studentById(score.studentId);
-    final detail = exam.subjects
-        .map((s) {
-          final v = score.scoreOf(s);
-          return v == null ? null : '$s ${ExamDetailScreen.fmt(v)}';
-        })
-        .whereType<String>()
-        .join(' · ');
+    final trailing = subjectFilter == null
+        ? ExamDetailScreen.fmt(score.total)
+        : ExamDetailScreen.fmt(score.scoreOf(subjectFilter!)!);
+
+    final meta = <String>[];
+    if (subjectFilter == null) {
+      meta.addAll([
+        for (final s in exam.subjects)
+          if (score.scoreOf(s) != null)
+            '$s ${ExamDetailScreen.fmt(score.scoreOf(s)!)}',
+      ]);
+    } else {
+      if (score.convertedRank != null) meta.add('折算 ${score.convertedRank}');
+      if (score.gradeRank != null) meta.add('年级 ${score.gradeRank}');
+      final sr = score.subjectRanks[subjectFilter];
+      if (sr != null) meta.add('官方位次 $sr');
+    }
 
     return GroupedTile(
       title: stu?.name ?? '未知',
-      subtitle: detail.isEmpty
-          ? '总分 ${ExamDetailScreen.fmt(score.total)}'
-          : detail,
-      leading: RankBadge(rank: rank),
+      subtitle: meta.isEmpty ? null : meta.join(' · '),
+      leading: RankBadge(rank: rank <= 0 ? 1 : rank),
       trailing: Text(
-        ExamDetailScreen.fmt(score.total),
+        trailing,
         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
       ),
       onTap: onTap,

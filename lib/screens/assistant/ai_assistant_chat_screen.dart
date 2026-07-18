@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/providers/ai_settings_controller.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/assistant/ai_action_confirm_screen.dart';
 import 'package:smart_class/screens/more/ai_settings_screen.dart';
+import 'package:smart_class/services/ai_action_proposal.dart';
 import 'package:smart_class/services/ai_chat_history_store.dart';
 import 'package:smart_class/services/ai_class_context.dart';
 import 'package:smart_class/services/deepseek_ai_service.dart';
@@ -24,9 +26,9 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
   static AiChatMessage get _welcomeMsg => AiChatMessage(
         role: 'assistant',
         text: '咩～我是懒羊羊。问课表、成绩、积分、考勤我会自动查本班；'
-            '随便聊聊不塞班级表，更省～\n'
-            '难一点的分析可点右上「深度」（会用满血，用完记得关）。\n'
-            '试试：分析最近一次考试、根据考试写班会、这周课表',
+            '也可以说「帮我整理今天待办」「设计一套加减分规则」——'
+            '我会先给草稿，你确认后才写入。\n'
+            '难一点的分析可点右上「深度」。',
         at: DateTime.fromMillisecondsSinceEpoch(0),
       );
 
@@ -41,11 +43,12 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
   static const _chips = [
     '这周课表安排',
     '今天有哪些课',
+    '帮我整理今天待办',
+    '帮我设计一套加减分规则',
     '积分最高的学生',
-    '语文成绩进步最大的学生',
     '分析最近一次考试成绩',
     '根据最近考试写一节班会提纲',
-    '最近考试谁总分最高',
+    '帮我生成月考家长会内容',
     '今日考勤情况',
   ];
 
@@ -181,9 +184,39 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
     try {
       final needClass = DeepSeekAiService.looksLikeClassDataQuestion(text);
       String? snap;
+      var loadedLabel = '';
+      String? routeNotice;
       if (needClass) {
-        // 按问题只带相关块（课表/成绩等），150 人班更省
-        snap = await AiClassContext.buildSnapshot(ctrl, question: text);
+        // Skill 式：目录 → 选型；解析失败重试一次；仍失败则降级（不瞎塞关键词包）
+        final catalog = await AiClassContext.buildCatalog(ctrl);
+        final router = ai.createService(maxTokens: 120);
+        var routed = await router.selectClassDataPacks(
+          question: text,
+          catalog: catalog,
+        );
+        if (!routed.parsed) {
+          routed = await router.selectClassDataPacks(
+            question: text,
+            catalog: catalog,
+          );
+        }
+        if (!routed.parsed) {
+          routeNotice = '数据包选型未能解析，未加载班级表';
+        } else if (routed.selection.isEmpty) {
+          // 合法空包：Agent 认为不需要本班表，信任结果
+          routeNotice = null;
+        } else {
+          final selection = AiClassContext.resolveExamIdStrict(
+            ctrl,
+            routed.selection,
+          );
+          snap = await AiClassContext.loadPacks(ctrl, selection);
+          loadedLabel = selection.shortLabels;
+          if (routed.selection.packs.contains(AiDataPackId.examBrief) &&
+              !selection.packs.contains(AiDataPackId.examBrief)) {
+            routeNotice = '未能定位指定考试，已改用成绩摘要';
+          }
+        }
       }
       final history = <Map<String, String>>[];
       for (var i = 0; i < _messages.length - 1; i++) {
@@ -194,7 +227,14 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
             m.at.millisecondsSinceEpoch == 0) {
           continue;
         }
-        history.add({'role': m.role, 'content': m.text});
+        var content = m.text;
+        // 多轮改草稿：把上一轮未确认提案塞进上下文（仍未写入）
+        final draft = m.proposal;
+        if (draft != null) {
+          content =
+              '$content\n（系统：上一轮待确认草稿 ${draft.toJson()}，尚未写入；用户可要求修改草稿）';
+        }
+        history.add({'role': m.role, 'content': content});
       }
       // 少带历史，省钱又够连贯
       final trimmed = history.length > 8
@@ -205,18 +245,27 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
             question: text,
             history: trimmed,
             classDataSnapshot: snap,
-            forceClassData: needClass,
+            forceClassData: needClass && (snap?.isNotEmpty ?? false),
           );
       if (!mounted) return;
-      final tag = needClass
-          ? (ai.deepAnalyze ? '（已查本班 · 深度）\n' : '（已查本班）\n')
-          : (ai.deepAnalyze ? '（深度）\n' : '');
+      final parsed = ParsedAiReply.parse(reply);
+      final tag = StringBuffer();
+      if (routeNotice != null && routeNotice.isNotEmpty) {
+        tag.writeln('（$routeNotice）');
+      } else if (needClass && loadedLabel.isNotEmpty) {
+        tag.writeln(
+          ai.deepAnalyze ? '（已查：$loadedLabel · 深度）' : '（已查：$loadedLabel）',
+        );
+      } else if (ai.deepAnalyze) {
+        tag.writeln('（深度）');
+      }
       setState(() {
         _messages.add(
           AiChatMessage(
             role: 'assistant',
-            text: '$tag$reply',
+            text: '${tag.toString()}${parsed.displayText}',
             at: DateTime.now(),
+            proposal: parsed.proposal,
           ),
         );
       });
@@ -249,6 +298,29 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
       if (mounted) setState(() => _busy = false);
       _scrollToEnd();
     }
+  }
+
+  Future<void> _openProposal(int messageIndex) async {
+    if (messageIndex < 0 || messageIndex >= _messages.length) return;
+    final m = _messages[messageIndex];
+    final proposal = m.proposal;
+    if (proposal == null) return;
+
+    final result = await AiActionConfirmScreen.push(context, proposal);
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _messages[messageIndex] = m.copyWith(clearProposal: true);
+      _messages.add(
+        AiChatMessage(
+          role: 'assistant',
+          text: result,
+          at: DateTime.now(),
+        ),
+      );
+    });
+    await _persist();
+    _scrollToEnd();
   }
 
   void _scrollToEnd({bool jump = false}) {
@@ -370,7 +442,14 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
                         );
                       }
                       final m = _messages[i];
-                      return _Bubble(mine: m.role == 'user', text: m.text);
+                      return _Bubble(
+                        mine: m.role == 'user',
+                        text: m.text,
+                        proposal: m.proposal,
+                        onConfirmProposal: m.proposal == null
+                            ? null
+                            : () => _openProposal(i),
+                      );
                     },
                   ),
           ),
@@ -388,7 +467,7 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
                       decoration: const InputDecoration(
-                        hintText: '问问本班数据…',
+                        hintText: '问问本班数据，或整理待办/积分规则…',
                       ),
                     ),
                   ),
@@ -408,9 +487,17 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.mine, required this.text});
+  const _Bubble({
+    required this.mine,
+    required this.text,
+    this.proposal,
+    this.onConfirmProposal,
+  });
+
   final bool mine;
   final String text;
+  final AiActionProposal? proposal;
+  final VoidCallback? onConfirmProposal;
 
   @override
   Widget build(BuildContext context) {
@@ -433,13 +520,65 @@ class _Bubble extends StatelessWidget {
             bottomRight: Radius.circular(mine ? 4 : 14),
           ),
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 15,
-            height: 1.35,
-            color: AppTheme.label,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              text,
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.35,
+                color: AppTheme.label,
+              ),
+            ),
+            if (!mine && proposal != null && onConfirmProposal != null) ...[
+              const SizedBox(height: 10),
+              Material(
+                color: AppTheme.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  onTap: onConfirmProposal,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    child: Row(
+                      children: [
+                        Icon(AppIcons.clipboardList,
+                            size: 18, color: AppTheme.blue),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                proposal!.previewSummary,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                '点此审阅，确认后才会写入',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppTheme.tertiaryLabel,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          AppIcons.chevronRight,
+                          size: 18,
+                          color: AppTheme.tertiaryLabel,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

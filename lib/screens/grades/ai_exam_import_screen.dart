@@ -1,7 +1,3 @@
-import 'dart:io';
-import 'dart:typed_data';
-
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -13,12 +9,13 @@ import 'package:smart_class/services/ai_exam_score_import.dart';
 import 'package:smart_class/services/deepseek_ai_service.dart';
 import 'package:smart_class/services/exam_score_excel.dart';
 import 'package:smart_class/services/excel_grid.dart';
-import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
+import 'package:smart_class/widgets/ai_import_file_source.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/grades_class_context.dart';
 import 'package:uuid/uuid.dart';
 
-/// AI 智能导入任意格式成绩 Excel：识别 → 预览 → 确认写入。
+/// AI 智能导入成绩：本机任意文件或微信分享 → 识别 → 校验/改列 → 预览 → 确认写入。
 class AiExamImportScreen extends StatefulWidget {
   const AiExamImportScreen({super.key, this.examId});
 
@@ -35,16 +32,29 @@ class AiExamImportScreen extends StatefulWidget {
   State<AiExamImportScreen> createState() => _AiExamImportScreenState();
 }
 
-class _AiExamImportScreenState extends State<AiExamImportScreen> {
+class _AiExamImportScreenState extends State<AiExamImportScreen>
+    with AiImportFileSourceMixin {
   bool _busy = false;
   String? _fileName;
   AiGradeParseResult? _parsed;
   List<ExamScoreMatchPreview> _previews = const [];
   String? _error;
 
-  Future<void> _ensureAiKey() async {
+  @override
+  void initState() {
+    super.initState();
+    initAiImportFileSource();
+  }
+
+  @override
+  void dispose() {
+    disposeAiImportFileSource();
+    super.dispose();
+  }
+
+  Future<bool> _ensureAiKey() async {
     final ai = context.read<AiSettingsController>();
-    if (ai.hasApiKey) return;
+    if (ai.hasApiKey) return true;
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -68,31 +78,26 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
         MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
       );
     }
+    if (!mounted) return false;
+    return context.read<AiSettingsController>().hasApiKey;
   }
 
-  Future<void> _pickAndParse() async {
-    await _ensureAiKey();
+  Future<void> _startLocal() async {
+    if (!await _ensureAiKey()) return;
     if (!mounted) return;
+    await pickAiImportLocalFile();
+  }
+
+  Future<void> _startWeChat() async {
+    if (!await _ensureAiKey()) return;
+    if (!mounted) return;
+    await importAiFileFromWeChat(fileKindLabel: '成绩表文件');
+  }
+
+  @override
+  Future<void> onAiImportFile(AiImportFile file) async {
     final aiCtrl = context.read<AiSettingsController>();
     if (!aiCtrl.hasApiKey) return;
-
-    final picked = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: kAiImportExtensions,
-      withData: true,
-    );
-    if (picked == null || picked.files.isEmpty) return;
-    if (!mounted) return;
-    final file = picked.files.single;
-    var bytes = file.bytes;
-    if (bytes == null && file.path != null) {
-      bytes = await File(file.path!).readAsBytes();
-    }
-    if (!mounted) return;
-    if (bytes == null) {
-      setState(() => _error = '无法读取文件');
-      return;
-    }
 
     final ctrl = context.read<ClassController>();
     final exam = widget.examId == null ? null : ctrl.examById(widget.examId!);
@@ -102,18 +107,17 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
     setState(() {
       _busy = true;
       _error = null;
-      _fileName = file.name;
+      _fileName = file.fileName;
       _parsed = null;
       _previews = const [];
     });
 
     try {
-      // 导入用 Flash 即可；略加大输出上限保证 JSON 完整
       final result = await AiExamScoreImport(
-        aiCtrl.createService(maxTokens: 1200),
+        aiCtrl.createService(maxTokens: 1600),
       ).parseBytes(
-        Uint8List.fromList(bytes),
-        fileName: file.name,
+        file.bytes,
+        fileName: file.fileName,
         knownStudentNames: knownNames,
         preferredSubjects: preferred,
       );
@@ -128,15 +132,58 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
       setState(() => _error = e.message);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '解析失败：$e');
+      setState(() => _error = ExcelGrid.friendlyParseError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  void _reapplyMapping(AiGradeTableMapping mapping) {
+    final parsed = _parsed;
+    if (parsed == null) return;
+    final ctrl = context.read<ClassController>();
+    final knownNames = [for (final s in ctrl.students) s.name];
+    final next = AiExamScoreImport.applyMapping(
+      parsed.grid,
+      mapping,
+      knownStudentNames: knownNames,
+      extraWarnings: const ['已按手动列映射重新提取'],
+    );
+    setState(() {
+      _parsed = next;
+      _previews = ctrl.previewExamScoreRows(next.rows);
+    });
+  }
+
+  bool get _canConfirm {
+    final parsed = _parsed;
+    if (parsed == null || parsed.rows.isEmpty || _busy) return false;
+    if (!parsed.mappingOk) return false;
+    final students = context.read<ClassController>().students;
+    final matched = _previews.where((p) => p.isMatched).length;
+    // 本班已有学生时，0 匹配通常是姓名列仍错，禁止落库。
+    if (students.isNotEmpty && matched == 0) return false;
+    return true;
+  }
+
+  String? get _confirmBlockReason {
+    final parsed = _parsed;
+    if (parsed == null) return null;
+    if (parsed.rows.isEmpty) return '当前映射未提取到成绩行';
+    if (!parsed.mappingOk) {
+      return '列映射未通过校验，请先在下方修正姓名列/科目列';
+    }
+    final students = context.read<ClassController>().students;
+    final matched = _previews.where((p) => p.isMatched).length;
+    if (students.isNotEmpty && matched == 0) {
+      return '本班学生均未匹配，请检查姓名列是否选对';
+    }
+    return null;
+  }
+
   Future<void> _confirmImport() async {
     final parsed = _parsed;
-    if (parsed == null || parsed.rows.isEmpty) return;
+    if (parsed == null || !_canConfirm) return;
 
     setState(() => _busy = true);
     try {
@@ -150,7 +197,7 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
         final title = mapping.examTitle.isNotEmpty
             ? mapping.examTitle
             : (_fileName?.replaceAll(
-                  RegExp(r'\.(xlsx|xls|csv)$', caseSensitive: false),
+                  RegExp(r'\.[^.]+$', caseSensitive: false),
                   '',
                 ) ??
                 '成绩导入');
@@ -250,6 +297,27 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
     return set.toList();
   }
 
+  String _nameColumnHint(AiGradeParseResult parsed) {
+    final samples = AiExamScoreImport.columnSamples(
+      parsed.grid,
+      parsed.mapping.headerRowIndex,
+      parsed.mapping.nameColumn,
+      limit: 3,
+    );
+    if (samples.isEmpty) return '';
+    return ' · 样例 ${samples.join('、')}';
+  }
+
+  /// AI notes 里常见自相矛盾长文，界面只留校验/操作相关提示。
+  static bool _isNoisyAiNote(String w) {
+    final t = w.trim();
+    if (t.length > 80 && (t.contains('表头') || t.contains('映射'))) return true;
+    if (t.contains('无学号列') && t.contains('备注列') && !t.contains('校验')) {
+      return true;
+    }
+    return false;
+  }
+
   String _statusLabel(ExamScoreMatchStatus s) => switch (s) {
         ExamScoreMatchStatus.matchedByNo => '学号匹配',
         ExamScoreMatchStatus.matchedByName => '姓名匹配',
@@ -265,23 +333,228 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
         ExamScoreMatchStatus.unmatched => AppTheme.destructive,
       };
 
+  Widget _sectionTitle(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.secondaryLabel,
+      ),
+    );
+  }
+
+  Widget _mappingEditor(AiGradeParseResult parsed) {
+    final mapping = parsed.mapping;
+    final labels = AiExamScoreImport.headerLabels(
+      parsed.grid,
+      mapping.headerRowIndex,
+    );
+    final colCount = parsed.grid.colCount;
+    if (colCount == 0) return const SizedBox.shrink();
+
+    final headerMax = parsed.grid.rowCount;
+    final headerValue =
+        mapping.headerRowIndex.clamp(0, headerMax > 0 ? headerMax - 1 : 0);
+    final headerOptions = <int>{
+      for (var i = 0; i < headerMax && i < 30; i++) i,
+      headerValue,
+    }.toList()
+      ..sort();
+
+    DropdownMenuItem<int> colItem(int i) => DropdownMenuItem(
+          value: i,
+          child: Text(
+            i < labels.length ? labels[i] : '列 $i',
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+
+    final nameSamples = AiExamScoreImport.columnSamples(
+      parsed.grid,
+      mapping.headerRowIndex,
+      mapping.nameColumn,
+      limit: 5,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: parsed.needsManualMapping
+            ? Border.all(color: AppTheme.destructive.withValues(alpha: 0.35))
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (parsed.needsManualMapping) ...[
+            Text(
+              '需要手动校正列映射',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppTheme.destructive,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              parsed.validationErrors.take(4).join('\n'),
+              style: TextStyle(fontSize: 12, color: AppTheme.destructive),
+            ),
+            const SizedBox(height: 12),
+          ] else ...[
+            const Text(
+              '列映射（可改）',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '源列表头与样例如下，改错列后会立即重算预览。',
+              style: TextStyle(fontSize: 12, color: AppTheme.tertiaryLabel),
+            ),
+            const SizedBox(height: 12),
+          ],
+          _dropdownRow<int>(
+            label: '表头行',
+            value: headerValue,
+            items: [
+              for (final i in headerOptions)
+                DropdownMenuItem(value: i, child: Text('第 $i 行（R$i）')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              _reapplyMapping(mapping.copyWith(headerRowIndex: v));
+            },
+          ),
+          const SizedBox(height: 8),
+          _dropdownRow<int>(
+            label: '姓名列',
+            value: mapping.nameColumn.clamp(0, colCount - 1),
+            items: [for (var i = 0; i < colCount; i++) colItem(i)],
+            onChanged: (v) {
+              if (v == null) return;
+              _reapplyMapping(
+                mapping.copyWith(nameColumn: v, nameSamples: const []),
+              );
+            },
+          ),
+          if (nameSamples.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '样例：${nameSamples.join('、')}',
+              style: TextStyle(fontSize: 12, color: AppTheme.tertiaryLabel),
+            ),
+          ],
+          const SizedBox(height: 8),
+          _dropdownRow<int?>(
+            label: '学号列',
+            value: (mapping.studentNoColumn != null &&
+                    mapping.studentNoColumn! >= 0 &&
+                    mapping.studentNoColumn! < colCount)
+                ? mapping.studentNoColumn
+                : null,
+            items: [
+              const DropdownMenuItem<int?>(value: null, child: Text('无')),
+              for (var i = 0; i < colCount; i++)
+                DropdownMenuItem<int?>(
+                  value: i,
+                  child: Text(
+                    i < labels.length ? labels[i] : '列 $i',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (v) {
+              _reapplyMapping(
+                mapping.copyWith(
+                  studentNoColumn: v,
+                  clearStudentNoColumn: v == null,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '科目列',
+            style: TextStyle(fontSize: 12, color: AppTheme.secondaryLabel),
+          ),
+          const SizedBox(height: 6),
+          for (final e in mapping.subjectColumns.entries) ...[
+            _dropdownRow<int>(
+              label: e.key,
+              value: e.value.clamp(0, colCount - 1),
+              items: [for (var i = 0; i < colCount; i++) colItem(i)],
+              onChanged: (v) {
+                if (v == null) return;
+                final next = Map<String, int>.from(mapping.subjectColumns);
+                next[e.key] = v;
+                _reapplyMapping(mapping.copyWith(subjectColumns: next));
+              },
+            ),
+            const SizedBox(height: 6),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dropdownRow<T>({
+    required String label,
+    required T? value,
+    required List<DropdownMenuItem<T>> items,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 13, color: AppTheme.secondaryLabel),
+          ),
+        ),
+        Expanded(
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+              border: OutlineInputBorder(),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<T>(
+                key: ValueKey<Object?>('$label-$value'),
+                value: value,
+                isExpanded: true,
+                isDense: true,
+                items: items,
+                onChanged: _busy ? null : onChanged,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final exam = widget.examId == null
         ? null
         : context.watch<ClassController>().examById(widget.examId!);
-    final matched =
-        _previews.where((p) => p.isMatched).length;
+    final matched = _previews.where((p) => p.isMatched).length;
     final parsed = _parsed;
+    final blockReason = _confirmBlockReason;
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: PageAppBar(
         title: const Text('AI 智能导入'),
         actions: [
-          if (parsed != null && parsed.rows.isNotEmpty)
+          if (parsed != null)
             TextButton(
-              onPressed: _busy ? null : _confirmImport,
+              onPressed: _canConfirm ? _confirmImport : null,
               child: const Text('确认导入'),
             ),
         ],
@@ -289,30 +562,17 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
         children: [
-          Text(
-            exam == null
-                ? '支持 Excel / Word / TXT / HTML。列名不必固定，AI 按语义认姓名与科目，并可新建考试。'
-                : '导入到「${exam.title}」。列名不必固定，AI 会尽量对齐科目。',
-            style: TextStyle(
-              fontSize: 14,
-              height: 1.4,
-              color: AppTheme.secondaryLabel,
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _busy ? null : _pickAndParse,
-            icon: _busy
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(AppIcons.sparkles, size: 18),
-            label: Text(_busy ? 'AI 识别中…' : '选择成绩表格'),
+          const GradesClassContext(),
+          const SizedBox(height: 12),
+          AiImportSourcePanel(
+            busy: _busy,
+            awaitingWeChat: awaitingWeChatShare,
+            onPickLocal: _startLocal,
+            onImportWeChat: _startWeChat,
+            onCancelWeChat: cancelAwaitingWeChatShare,
+            hint: exam == null
+                ? '微信/本机可选成绩表或照片截图（本地 OCR → AI）。列名不必固定，并可新建考试。'
+                : '导入到「${exam.title}」。支持文件与照片；列名不必固定，AI 会尽量对齐科目。',
           ),
           if (_fileName != null) ...[
             const SizedBox(height: 10),
@@ -330,14 +590,20 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
           ],
           if (parsed != null) ...[
             const SizedBox(height: 20),
-            Text(
-              '识别结果',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.secondaryLabel,
-              ),
-            ),
+            if (parsed.needsManualMapping) ...[
+              _sectionTitle('列映射（必改）'),
+              const SizedBox(height: 8),
+              _mappingEditor(parsed),
+              if (blockReason != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  blockReason,
+                  style: TextStyle(fontSize: 13, color: AppTheme.destructive),
+                ),
+              ],
+              const SizedBox(height: 16),
+            ],
+            _sectionTitle('识别结果'),
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
@@ -360,25 +626,55 @@ class _AiExamImportScreenState extends State<AiExamImportScreen> {
                     '科目：${parsed.mapping.subjects.isEmpty ? '—' : parsed.mapping.subjects.join('、')}',
                   ),
                   Text('解析 ${parsed.rows.length} 行 · 可匹配 $matched 人'),
+                  Text(
+                    '姓名列：列 ${parsed.mapping.nameColumn}'
+                    '${_nameColumnHint(parsed)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: parsed.mappingOk
+                          ? AppTheme.tertiaryLabel
+                          : AppTheme.destructive,
+                    ),
+                  ),
+                  if (parsed.repairAttempts > 0)
+                    Text(
+                      'AI 识别尝试 ${parsed.repairAttempts} 次'
+                      '${parsed.mappingOk ? ' · 校验通过' : ' · 待人工校正'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: parsed.mappingOk
+                            ? AppTheme.tertiaryLabel
+                            : AppTheme.destructive,
+                      ),
+                    ),
                 ],
               ),
             ),
+            if (!parsed.needsManualMapping) ...[
+              const SizedBox(height: 16),
+              _sectionTitle('列映射'),
+              const SizedBox(height: 8),
+              _mappingEditor(parsed),
+              if (blockReason != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  blockReason,
+                  style: TextStyle(fontSize: 13, color: AppTheme.destructive),
+                ),
+              ],
+            ],
             if (parsed.warnings.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
-                parsed.warnings.take(6).join('\n'),
+                parsed.warnings
+                    .where((w) => !_isNoisyAiNote(w))
+                    .take(4)
+                    .join('\n'),
                 style: TextStyle(fontSize: 12, color: AppTheme.tertiaryLabel),
               ),
             ],
             const SizedBox(height: 16),
-            Text(
-              '学生匹配预览',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.secondaryLabel,
-              ),
-            ),
+            _sectionTitle('学生匹配预览'),
             const SizedBox(height: 8),
             for (final p in _previews.take(80))
               Padding(

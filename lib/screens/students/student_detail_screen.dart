@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/grades/exam_detail_screen.dart';
 import 'package:smart_class/screens/students/student_edit_screen.dart';
 import 'package:smart_class/services/file_share.dart';
 import 'package:smart_class/theme/app_icons.dart';
@@ -34,6 +35,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
     final ctrl = context.read<ClassController>();
     final att = await ctrl.attendanceOf(widget.studentId);
     final pts = await ctrl.pointsOf(widget.studentId);
+    await ctrl.ensureAllExamScores();
     if (!mounted) return;
     setState(() {
       _att = att;
@@ -112,6 +114,48 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                     if (s.note.isNotEmpty)
                       GroupedTile(title: '备注', subtitle: s.note),
                   ],
+                ),
+                const SizedBox(height: 18),
+                Builder(
+                  builder: (context) {
+                    final grades =
+                        ctrl.examScoresOfStudent(widget.studentId);
+                    return GroupedSection(
+                      header: '成绩 · ${grades.length}',
+                      footer: grades.isEmpty
+                          ? '该生尚未录入考试成绩'
+                          : '点进查看本场考试分析',
+                      children: [
+                        if (grades.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Text(
+                              '暂无',
+                              style: TextStyle(color: AppTheme.tertiaryLabel),
+                            ),
+                          )
+                        else
+                          for (final (exam, score) in grades.take(20))
+                            GroupedTile(
+                              title: exam.title,
+                              subtitle: '${exam.category} · ${exam.examDate}',
+                              trailing: Text(
+                                ExamDetailScreen.fmt(score.total),
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ExamDetailScreen(examId: exam.id),
+                                ),
+                              ),
+                            ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 18),
                 GroupedSection(

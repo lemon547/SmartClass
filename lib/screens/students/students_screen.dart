@@ -104,7 +104,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                 children: [
                   Expanded(
                     child: _SoftButton(
-                      label: '导入名单 Excel',
+                      label: '导入名单',
                       color: const Color(0xFFE8F1FF),
                       textColor: AppTheme.blue,
                       onTap: () => _showRosterActions(context),
@@ -113,7 +113,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _SoftButton(
-                      label: '成绩分析',
+                      label: '成绩',
                       color: const Color(0xFFF0E8FF),
                       textColor: const Color(0xFF5856D6),
                       onTap: () => Navigator.of(context).push(
@@ -222,7 +222,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
               ListTile(
                 leading: Icon(AppIcons.sparkles, color: AppTheme.blue),
                 title: const Text('AI 智能导入'),
-                subtitle: const Text('Excel / Word / TXT / HTML 均可'),
+                subtitle: const Text('微信/本机文件或照片，OCR+AI'),
                 onTap: () {
                   Navigator.pop(ctx);
                   AiStudentImportScreen.push(context);

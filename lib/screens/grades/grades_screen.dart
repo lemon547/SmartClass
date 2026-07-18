@@ -9,8 +9,9 @@ import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/data_charts.dart';
+import 'package:smart_class/widgets/grades_class_context.dart';
 
-/// 成绩存档与分析：期末 / 半期 / 月考等可自由编辑
+/// 成绩报告列表（对齐班级优化大师「成绩报告」）
 class GradesScreen extends StatefulWidget {
   const GradesScreen({super.key});
 
@@ -30,14 +31,34 @@ class _GradesScreenState extends State<GradesScreen> {
     });
   }
 
+  List<String> _populatedCategories(ClassController ctrl) {
+    final counts = <String, int>{};
+    for (final e in ctrl.exams) {
+      counts[e.category] = (counts[e.category] ?? 0) + 1;
+    }
+    final ordered = <String>[];
+    for (final c in ctrl.examCategories) {
+      if (counts.containsKey(c)) ordered.add(c);
+    }
+    for (final c in counts.keys) {
+      if (!ordered.contains(c)) ordered.add(c);
+    }
+    return ordered;
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = context.watch<ClassController>();
-    final list = ctrl.examsOf(_filter);
+    final populated = _populatedCategories(ctrl);
+    final filter =
+        (_filter != null && populated.contains(_filter)) ? _filter : null;
+    final list = ctrl.examsOf(filter);
+    final showFilter = populated.length >= 2;
+    final roster = ctrl.students.length;
 
     return Scaffold(
       appBar: PageAppBar(
-        title: const Text('成绩分析'),
+        title: const Text('成绩'),
         actions: [
           IconButton(
             tooltip: 'AI 智能导入',
@@ -45,79 +66,54 @@ class _GradesScreenState extends State<GradesScreen> {
             icon: const Icon(AppIcons.sparkles),
           ),
           IconButton(
-            tooltip: '新建考试',
-            onPressed: () => ExamEditScreen.push(context),
+            tooltip: '新建成绩报告',
+            onPressed: () => _createExam(context),
             icon: const Icon(AppIcons.plus),
           ),
         ],
       ),
       body: Column(
         children: [
-          SizedBox(
-            height: 48,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: Text('全部 (${ctrl.exams.length})'),
-                    selected: _filter == null,
-                    showCheckmark: false,
-                    onSelected: (_) => setState(() => _filter = null),
-                  ),
-                ),
-                for (final c in ctrl.examCategories)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(
-                        '$c (${ctrl.exams.where((e) => e.category == c).length})',
-                      ),
-                      selected: _filter == c,
-                      showCheckmark: false,
-                      onSelected: (_) => setState(() => _filter = c),
-                    ),
-                  ),
-              ],
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 2),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: GradesClassContext(),
             ),
           ),
-          Expanded(
-            child: list.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(AppIcons.chart,
-                              size: 40, color: AppTheme.quaternaryLabel),
-                          const SizedBox(height: 12),
-                          Text(
-                            _filter == null ? '还没有考试存档' : '暂无「$_filter」记录',
-                            style: TextStyle(color: AppTheme.tertiaryLabel),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '可新建考试，或用 AI 导入任意格式成绩表',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.quaternaryLabel,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          FilledButton(
-                            onPressed: () => ExamEditScreen.push(context),
-                            child: const Text('新建考试'),
-                          ),
-                        ],
+          if (showFilter)
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                children: [
+                  _CategoryPill(
+                    label: '全部',
+                    selected: filter == null,
+                    onTap: () => setState(() => _filter = null),
+                  ),
+                  for (final c in populated)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: _CategoryPill(
+                        label: c,
+                        selected: filter == c,
+                        onTap: () => setState(() => _filter = c),
                       ),
                     ),
+                ],
+              ),
+            ),
+          Expanded(
+            child: list.isEmpty
+                ? _EmptyState(
+                    filter: filter,
+                    onCreate: () => _createExam(context),
+                    onAiImport: () => AiExamImportScreen.push(context),
                   )
                 : ListView(
-                    padding: const EdgeInsets.only(bottom: 24),
+                    padding: const EdgeInsets.only(bottom: 28, top: 4),
                     children: [
                       if (_examAvgBars(ctrl, list).length >= 2)
                         ChartCard(
@@ -127,24 +123,12 @@ class _GradesScreenState extends State<GradesScreen> {
                             items: _examAvgBars(ctrl, list),
                           ),
                         ),
-                      GroupedSection(
-                        header: '${list.length} 次考试',
-                        children: [
-                          for (final e in list)
-                            GroupedTile(
-                              title: e.title,
-                              subtitle:
-                                  '${e.category} · ${e.examDate} · ${e.subjects.length} 科 · ${ctrl.scoresOfExam(e.id).length} 人${ctrl.filesOfExam(e.id).isEmpty ? '' : ' · ${ctrl.filesOfExam(e.id).length} 份资料'}',
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      ExamDetailScreen(examId: e.id),
-                                ),
-                              ),
-                              onLongPress: () =>
-                                  ExamEditScreen.push(context, existing: e),
-                            ),
-                        ],
+                      ..._examSections(
+                        ctrl,
+                        list,
+                        filter,
+                        populated,
+                        roster,
                       ),
                     ],
                   ),
@@ -154,11 +138,71 @@ class _GradesScreenState extends State<GradesScreen> {
     );
   }
 
+  List<Widget> _examSections(
+    ClassController ctrl,
+    List<Exam> list,
+    String? filter,
+    List<String> populated,
+    int roster,
+  ) {
+    if (filter == null && populated.length >= 2) {
+      return [
+        for (final cat in populated)
+          if (list.any((e) => e.category == cat))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: GroupedSection(
+                header:
+                    '$cat · ${list.where((e) => e.category == cat).length}',
+                children: [
+                  for (final e in list)
+                    if (e.category == cat)
+                      _ExamTile(
+                        exam: e,
+                        showCategory: false,
+                        ctrl: ctrl,
+                        roster: roster,
+                      ),
+                ],
+              ),
+            ),
+      ];
+    }
+    return [
+      GroupedSection(
+        header: filter == null
+            ? '成绩报告 · ${list.length}'
+            : '$filter · ${list.length}',
+        children: [
+          for (final e in list)
+            _ExamTile(
+              exam: e,
+              showCategory: filter == null,
+              ctrl: ctrl,
+              roster: roster,
+            ),
+        ],
+      ),
+    ];
+  }
+
+  Future<void> _createExam(BuildContext context) async {
+    final id = await ExamEditScreen.push(context);
+    if (id == null || !context.mounted) return;
+    if (id == ExamEditScreen.deletedToken) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ExamDetailScreen(
+          examId: id,
+          promptEnterScores: true,
+        ),
+      ),
+    );
+  }
+
   List<ChartBarItem> _examAvgBars(ClassController ctrl, List<Exam> list) {
     final items = <ChartBarItem>[];
-    // 按日期升序对比
-    final sorted = [...list]
-      ..sort((a, b) => a.examDate.compareTo(b.examDate));
+    final sorted = [...list]..sort((a, b) => a.examDate.compareTo(b.examDate));
     for (final e in sorted) {
       final scores = ctrl.scoresOfExam(e.id);
       if (scores.isEmpty) continue;
@@ -168,5 +212,133 @@ class _GradesScreenState extends State<GradesScreen> {
       items.add(ChartBarItem(label: label, value: avg));
     }
     return items;
+  }
+}
+
+class _CategoryPill extends StatelessWidget {
+  const _CategoryPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? AppTheme.label : AppTheme.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: selected ? AppTheme.bg : AppTheme.secondaryLabel,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExamTile extends StatelessWidget {
+  const _ExamTile({
+    required this.exam,
+    required this.showCategory,
+    required this.ctrl,
+    required this.roster,
+  });
+
+  final Exam exam;
+  final bool showCategory;
+  final ClassController ctrl;
+  final int roster;
+
+  @override
+  Widget build(BuildContext context) {
+    final recorded = ctrl.scoresOfExam(exam.id).length;
+    final meta = <String>[
+      if (showCategory) exam.category,
+      exam.examDate,
+      if (roster > 0) '$recorded/$roster 人' else '$recorded 人',
+    ];
+
+    return GroupedTile(
+      title: exam.title,
+      subtitle: meta.join(' · '),
+      trailing: Icon(
+        AppIcons.chevronRight,
+        size: 20,
+        color: AppTheme.quaternaryLabel,
+      ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ExamDetailScreen(examId: exam.id),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({
+    required this.filter,
+    required this.onCreate,
+    required this.onAiImport,
+  });
+
+  final String? filter;
+  final VoidCallback onCreate;
+  final VoidCallback onAiImport;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(AppIcons.chart, size: 40, color: AppTheme.quaternaryLabel),
+            const SizedBox(height: 12),
+            Text(
+              filter == null ? '还没有成绩报告' : '暂无「$filter」报告',
+              style: TextStyle(color: AppTheme.tertiaryLabel),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '新建报告后在成绩表中录入，或用 AI 导入成绩表/照片',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: AppTheme.quaternaryLabel,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onCreate,
+              child: const Text('新建成绩报告'),
+            ),
+            if (filter == null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: onAiImport,
+                icon: const Icon(AppIcons.sparkles, size: 18),
+                label: const Text('AI 智能导入'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

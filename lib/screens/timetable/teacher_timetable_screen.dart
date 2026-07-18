@@ -10,7 +10,6 @@ import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/class_switcher_sheet.dart';
-import 'package:smart_class/widgets/excel_import_sheet.dart';
 
 /// 课表中心：
 /// - 班级课表：先选班级，编辑该班整张课表
@@ -513,13 +512,12 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
     BuildContext context, {
     required bool markAsMine,
   }) async {
-    final ctrl = context.read<ClassController>();
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -534,24 +532,12 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
               ListTile(
                 leading: Icon(AppIcons.sparkles, color: AppTheme.blue),
                 title: const Text('AI 智能导入'),
-                subtitle: const Text('Excel / Word / TXT / HTML 均可'),
+                subtitle: const Text('微信/本机文件或照片，OCR+AI'),
                 onTap: () {
                   Navigator.pop(ctx);
                   AiTimetableImportScreen.push(
                     context,
                     markAsMine: markAsMine,
-                  );
-                },
-              ),
-              ListTile(
-                leading: Icon(AppIcons.upload, color: AppTheme.blue),
-                title: const Text('标准模板导入'),
-                subtitle: const Text('星期 / 节次 / 科目 / 班级'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  importExcelFromPhone(
-                    context,
-                    (bytes, _) => ctrl.importTeacherTimetableFromBytes(bytes),
                   );
                 },
               ),
@@ -565,28 +551,6 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
                   Navigator.pop(ctx);
                   _openManualAdd(context);
                 },
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppTheme.secondaryLabel,
-                    textStyle: const TextStyle(fontSize: 13),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    downloadExcelTemplate(
-                      context,
-                      ctrl.exportTeacherTimetableTemplateFile,
-                    );
-                  },
-                  icon: Icon(
-                    AppIcons.download,
-                    size: 15,
-                    color: AppTheme.secondaryLabel,
-                  ),
-                  label: const Text('下载空白模板'),
-                ),
               ),
             ],
           ),

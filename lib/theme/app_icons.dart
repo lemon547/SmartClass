@@ -64,4 +64,7 @@ abstract final class AppIcons {
   static const IconData wand = LucideIcons.wandSparkles;
   static const IconData eye = LucideIcons.eye;
   static const IconData eyeOff = LucideIcons.eyeOff;
+  static const IconData edit = LucideIcons.pencil;
+  static const IconData copy = LucideIcons.copy;
+  static const IconData usersGroup = LucideIcons.users;
 }

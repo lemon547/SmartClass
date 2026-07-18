@@ -84,12 +84,7 @@ class ClassSwitcherScreen extends StatelessWidget {
                           return;
                         }
                         await ctrl.switchClass(c.id);
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('已切换到 ${c.displayTitle}')),
-                          );
-                        }
+                        if (context.mounted) Navigator.pop(context);
                       },
                     ),
                 ],

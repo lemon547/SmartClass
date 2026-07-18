@@ -1,29 +1,56 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_class/services/ai_action_proposal.dart';
 
 class AiChatMessage {
   const AiChatMessage({
     required this.role,
     required this.text,
     required this.at,
+    this.proposal,
   });
 
   final String role; // user | assistant
   final String text;
   final DateTime at;
 
+  /// 仅 assistant：可确认写入的草稿（确认前不落业务库）。
+  final AiActionProposal? proposal;
+
   Map<String, Object?> toJson() => {
         'role': role,
         'text': text,
         'at': at.toIso8601String(),
+        if (proposal != null) 'proposal': proposal!.toJson(),
       };
 
   factory AiChatMessage.fromJson(Map<String, dynamic> json) {
+    AiActionProposal? proposal;
+    final raw = json['proposal'];
+    if (raw is Map) {
+      proposal = AiActionProposal.fromJson(Map<String, dynamic>.from(raw));
+    }
     return AiChatMessage(
       role: (json['role'] ?? 'assistant').toString(),
       text: (json['text'] ?? '').toString(),
       at: DateTime.tryParse((json['at'] ?? '').toString()) ?? DateTime.now(),
+      proposal: proposal,
+    );
+  }
+
+  AiChatMessage copyWith({
+    String? role,
+    String? text,
+    DateTime? at,
+    AiActionProposal? proposal,
+    bool clearProposal = false,
+  }) {
+    return AiChatMessage(
+      role: role ?? this.role,
+      text: text ?? this.text,
+      at: at ?? this.at,
+      proposal: clearProposal ? null : (proposal ?? this.proposal),
     );
   }
 }

@@ -697,16 +697,11 @@ class ClassRepository {
     '单元测验',
   ];
 
+  /// 新建考试默认科目：语数英起步，其余在编辑页按需添加
   static const defaultExamSubjects = [
     '语文',
     '数学',
     '英语',
-    '物理',
-    '化学',
-    '生物',
-    '政治',
-    '历史',
-    '地理',
   ];
 
   List<String> loadExamCategories() {

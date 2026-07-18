@@ -50,4 +50,6 @@ dependencies {
     // https://github.com/zippo88888888/ZFileManager
     implementation("com.github.zippo88888888:ZFileManager:version-1.4.7")
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    // ML Kit 中文文字识别（免费、端侧），供成绩/名单照片 OCR
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
 }
