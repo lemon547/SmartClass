@@ -1,15 +1,221 @@
 ﻿import 'package:flutter/cupertino.dart';
-import 'package:smart_class/theme/app_icons.dart';
 import 'package:flutter/material.dart';
-
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/services/smart_seating.dart';
+import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 
-class SeatingScreen extends StatelessWidget {
+class SeatingScreen extends StatefulWidget {
   const SeatingScreen({super.key});
+
+  @override
+  State<SeatingScreen> createState() => _SeatingScreenState();
+}
+
+class _SeatingScreenState extends State<SeatingScreen> {
+  bool _swapMode = false;
+  String? _swapFromId;
+
+  Student? _at(ClassController ctrl, int r, int c) {
+    for (final s in ctrl.students) {
+      if (s.seatRow == r && s.seatCol == c) return s;
+    }
+    return null;
+  }
+
+  Future<void> _smartArrange(BuildContext context) async {
+    final rules = <SeatingRule>{
+      SeatingRule.genderAlternate,
+      SeatingRule.studentNoOrder,
+    };
+    var useScore = false;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '智能排座',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '勾选规则后生成座位；若有冲突会先提示说明。',
+                    style: TextStyle(
+                      color: AppTheme.secondaryLabel,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: rules.contains(SeatingRule.genderAlternate),
+                    title: Text(SeatingRule.genderAlternate.label),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (v) => setLocal(() {
+                      if (v == true) {
+                        rules.add(SeatingRule.genderAlternate);
+                      } else {
+                        rules.remove(SeatingRule.genderAlternate);
+                      }
+                    }),
+                  ),
+                  CheckboxListTile(
+                    value: rules.contains(SeatingRule.studentNoOrder),
+                    title: Text(SeatingRule.studentNoOrder.label),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (v) => setLocal(() {
+                      if (v == true) {
+                        rules.add(SeatingRule.studentNoOrder);
+                      } else {
+                        rules.remove(SeatingRule.studentNoOrder);
+                      }
+                    }),
+                  ),
+                  CheckboxListTile(
+                    value: useScore,
+                    title: Text(SeatingRule.scoreBackHigh.label),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (v) => setLocal(() {
+                      useScore = v == true;
+                      if (useScore) {
+                        rules.add(SeatingRule.scoreBackHigh);
+                      } else {
+                        rules.remove(SeatingRule.scoreBackHigh);
+                      }
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('生成并应用'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('取消'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final ctrl = context.read<ClassController>();
+    Map<String, double>? totals;
+    if (rules.contains(SeatingRule.scoreBackHigh)) {
+      await ctrl.ensureAllExamScores();
+      if (ctrl.exams.isNotEmpty) {
+        final latest = ctrl.exams.first;
+        final scores = ctrl.examScoresByExam[latest.id] ?? [];
+        totals = {
+          for (final s in scores) s.studentId: s.total,
+        };
+      }
+    }
+
+    final result = SmartSeating.arrange(
+      students: ctrl.students,
+      rows: ctrl.profile.seatRows,
+      cols: ctrl.profile.seatCols,
+      rules: rules,
+      latestTotals: totals,
+    );
+
+    if (result.conflictNotes.isNotEmpty && context.mounted) {
+      final go = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('排座说明'),
+          content: Text(result.conflictNotes.join('\n')),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('仍然应用'),
+            ),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
+
+    await ctrl.applySmartSeats(result.seats);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已应用智能排座')),
+      );
+    }
+  }
+
+  Future<void> _share(BuildContext context) async {
+    final ctrl = context.read<ClassController>();
+    final text = SmartSeating.seatingChartText(
+      students: ctrl.students,
+      rows: ctrl.profile.seatRows,
+      cols: ctrl.profile.seatCols,
+      className: ctrl.currentClass?.displayTitle ?? ctrl.profile.displayTitle,
+    );
+    await Share.share(text);
+  }
+
+  Future<void> _onSeatTap(
+    BuildContext context,
+    ClassController ctrl,
+    int r,
+    int c,
+  ) async {
+    final seated = _at(ctrl, r, c);
+    if (_swapMode) {
+      if (seated == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请选择有人的座位进行对调')),
+        );
+        return;
+      }
+      if (_swapFromId == null) {
+        setState(() => _swapFromId = seated.id);
+        return;
+      }
+      if (_swapFromId == seated.id) {
+        setState(() => _swapFromId = null);
+        return;
+      }
+      await ctrl.swapStudentSeats(_swapFromId!, seated.id);
+      setState(() {
+        _swapFromId = null;
+        _swapMode = false;
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已对调座位')),
+        );
+      }
+      return;
+    }
+
+    if (seated != null) return;
+    await _assign(context, r, c);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,39 +223,18 @@ class SeatingScreen extends StatelessWidget {
     final rows = ctrl.profile.seatRows;
     final cols = ctrl.profile.seatCols;
 
-    Student? at(int r, int c) {
-      for (final s in ctrl.students) {
-        if (s.seatRow == r && s.seatCol == c) return s;
-      }
-      return null;
-    }
-
     return Scaffold(
       appBar: PageAppBar(
         title: const Text('座位表'),
         actions: [
+          IconButton(
+            tooltip: '分享座位表',
+            onPressed: () => _share(context),
+            icon: const Icon(AppIcons.share),
+          ),
           TextButton(
-            onPressed: () async {
-              final ok = await showCupertinoDialog<bool>(
-                context: context,
-                builder: (ctx) => CupertinoAlertDialog(
-                  title: const Text('一键排座？'),
-                  content: const Text('按花名册顺序自动填入座位，超出行列的学生将清空座位。'),
-                  actions: [
-                    CupertinoDialogAction(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('取消'),
-                    ),
-                    CupertinoDialogAction(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('排座'),
-                    ),
-                  ],
-                ),
-              );
-              if (ok == true) await ctrl.autoArrangeSeats();
-            },
-            child: const Text('自动排座'),
+            onPressed: () => _smartArrange(context),
+            child: const Text('智能排座'),
           ),
           IconButton(
             onPressed: () => _editGrid(context),
@@ -60,10 +245,55 @@ class SeatingScreen extends StatelessWidget {
       body: Column(
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
-              '点击空位分配学生 · 长按座位清空',
+              _swapMode
+                  ? (_swapFromId == null
+                      ? '对调模式：先点第一位学生，再点第二位'
+                      : '已选中一位，再点另一位完成对调')
+                  : '点击空位分配 · 长按清空 · 可开启对调',
               style: TextStyle(color: AppTheme.secondaryLabel, fontSize: 13),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('对调座位'),
+                  selected: _swapMode,
+                  onSelected: (v) => setState(() {
+                    _swapMode = v;
+                    _swapFromId = null;
+                  }),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () async {
+                    final ok = await showCupertinoDialog<bool>(
+                      context: context,
+                      builder: (ctx) => CupertinoAlertDialog(
+                        title: const Text('一键排座？'),
+                        content: const Text(
+                          '按花名册顺序自动填入座位，超出行列的学生将清空座位。',
+                        ),
+                        actions: [
+                          CupertinoDialogAction(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('取消'),
+                          ),
+                          CupertinoDialogAction(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('排座'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true) await ctrl.autoArrangeSeats();
+                  },
+                  child: const Text('按名册顺序'),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -71,7 +301,8 @@ class SeatingScreen extends StatelessWidget {
               builder: (context, constraints) {
                 return SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
                     child: Center(
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
@@ -86,12 +317,20 @@ class SeatingScreen extends StatelessWidget {
                                   children: [
                                     for (var c = 0; c < cols; c++)
                                       _SeatCell(
-                                        student: at(r, c),
-                                        onTap: () => _assign(context, r, c),
-                                        onLongPress: () {
-                                          final s = at(r, c);
-                                          if (s != null) ctrl.clearSeat(s.id);
-                                        },
+                                        student: _at(ctrl, r, c),
+                                        highlighted: _swapFromId != null &&
+                                            _at(ctrl, r, c)?.id ==
+                                                _swapFromId,
+                                        onTap: () =>
+                                            _onSeatTap(context, ctrl, r, c),
+                                        onLongPress: _swapMode
+                                            ? null
+                                            : () {
+                                                final s = _at(ctrl, r, c);
+                                                if (s != null) {
+                                                  ctrl.clearSeat(s.id);
+                                                }
+                                              },
                                       ),
                                   ],
                                 ),
@@ -200,9 +439,10 @@ class SeatingScreen extends StatelessWidget {
             children: [
               const Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('选择学生',
-                    style:
-                        TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                child: Text(
+                  '选择学生',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                ),
               ),
               for (final s in candidates)
                 ListTile(
@@ -228,12 +468,14 @@ class _SeatCell extends StatelessWidget {
   const _SeatCell({
     required this.student,
     required this.onTap,
-    required this.onLongPress,
+    this.onLongPress,
+    this.highlighted = false,
   });
 
   final Student? student;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -241,7 +483,11 @@ class _SeatCell extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(4),
       child: Material(
-        color: filled ? AppTheme.blue.withValues(alpha: 0.12) : AppTheme.surface,
+        color: highlighted
+            ? AppTheme.blue.withValues(alpha: 0.28)
+            : filled
+                ? AppTheme.blue.withValues(alpha: 0.12)
+                : AppTheme.surface,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           onTap: onTap,

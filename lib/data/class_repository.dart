@@ -30,6 +30,7 @@ class ClassRepository {
     'work_logs',
     'leave_records',
     'discipline_records',
+    'student_honors',
     'exams',
     'semesters',
     'timetable',
@@ -830,6 +831,34 @@ class ClassRepository {
     }
   }
 
+  /// 批量写入座位（智能排座）
+  Future<void> applySeatMap(Map<String, (int row, int col)> seats) async {
+    final students = await getStudents();
+    for (final s in students) {
+      final pos = seats[s.id];
+      if (pos == null) {
+        await updateSeat(studentId: s.id, row: null, col: null);
+      } else {
+        await updateSeat(studentId: s.id, row: pos.$1, col: pos.$2);
+      }
+    }
+  }
+
+  Future<void> swapSeats(String aId, String bId) async {
+    final students = await getStudents();
+    Student? a;
+    Student? b;
+    for (final s in students) {
+      if (s.id == aId) a = s;
+      if (s.id == bId) b = s;
+    }
+    if (a == null || b == null) return;
+    final aRow = a.seatRow;
+    final aCol = a.seatCol;
+    await updateSeat(studentId: a.id, row: b.seatRow, col: b.seatCol);
+    await updateSeat(studentId: b.id, row: aRow, col: aCol);
+  }
+
   // ── Roll history ──────────────────────────────────────────────────────────
 
   List<Map<String, dynamic>> loadRollHistory() {
@@ -1446,11 +1475,175 @@ class ClassRepository {
 
   Future<void> deleteLeaveRecord(String id) async {
     final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'leave_records',
+      where: 'id = ? AND class_id = ?',
+      whereArgs: [id, currentClassId],
+      limit: 1,
+    );
+    if (rows.isNotEmpty) {
+      final item = LeaveRecord.fromMap(rows.first);
+      if (item.hasProof) {
+        await LocalFileArchive.deleteFile(
+          root: LocalFileArchive.leaveProofRoot,
+          classId: currentClassId,
+          ownerId: id,
+          storedName: item.proofStoredName,
+        );
+        await LocalFileArchive.deleteOwnerDir(
+          root: LocalFileArchive.leaveProofRoot,
+          classId: currentClassId,
+          ownerId: id,
+        );
+      }
+    }
     await db.delete(
       'leave_records',
       where: 'id = ? AND class_id = ?',
       whereArgs: [id, currentClassId],
     );
+  }
+
+  Future<({String storedName, String originalName, int sizeBytes})>
+      importLeaveProof({
+    required String leaveId,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    final imported = await LocalFileArchive.importFile(
+      root: LocalFileArchive.leaveProofRoot,
+      classId: currentClassId,
+      ownerId: leaveId,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    return (
+      storedName: imported.storedName,
+      originalName: originalName,
+      sizeBytes: imported.sizeBytes,
+    );
+  }
+
+  Future<String> leaveProofAbsolutePath(LeaveRecord item) =>
+      LocalFileArchive.absolutePath(
+        root: LocalFileArchive.leaveProofRoot,
+        classId: currentClassId,
+        ownerId: item.id,
+        storedName: item.proofStoredName,
+      );
+
+  // ── Student honors ────────────────────────────────────────────────────────
+
+  Future<List<StudentHonor>> getStudentHonors({String? studentId}) async {
+    final db = await AppDatabase.instance.database;
+    final where = StringBuffer('class_id = ?');
+    final args = <Object?>[currentClassId];
+    if (studentId != null) {
+      where.write(' AND student_id = ?');
+      args.add(studentId);
+    }
+    final rows = await db.query(
+      'student_honors',
+      where: where.toString(),
+      whereArgs: args,
+      orderBy: 'date DESC, created_at DESC',
+    );
+    return rows.map(StudentHonor.fromMap).toList();
+  }
+
+  Future<void> upsertStudentHonor(StudentHonor item) async {
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'student_honors',
+      _withClass(item.toMap()),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteStudentHonor(String id) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete(
+      'student_honors',
+      where: 'id = ? AND class_id = ?',
+      whereArgs: [id, currentClassId],
+    );
+  }
+
+  // ── Title materials (teacher-level) ───────────────────────────────────────
+
+  Future<List<TitleMaterial>> getTitleMaterials() async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'title_materials',
+      orderBy: 'year DESC, category ASC, created_at DESC',
+    );
+    return rows.map(TitleMaterial.fromMap).toList();
+  }
+
+  Future<void> upsertTitleMaterial(TitleMaterial item) async {
+    final db = await AppDatabase.instance.database;
+    await db.insert(
+      'title_materials',
+      item.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<TitleMaterial> importTitleMaterial({
+    required int year,
+    required String category,
+    required String title,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    final imported = await LocalFileArchive.importFile(
+      root: LocalFileArchive.titleMaterialRoot,
+      classId: LocalFileArchive.teacherOwner,
+      ownerId: 'all',
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    final item = TitleMaterial(
+      id: _uuid.v4(),
+      year: year,
+      category: category.trim().isEmpty ? '其他' : category.trim(),
+      title: title.trim().isEmpty ? originalName : title.trim(),
+      storedName: imported.storedName,
+      originalName: originalName,
+      mimeHint: '',
+      sizeBytes: imported.sizeBytes,
+      createdAt: DateTime.now(),
+    );
+    await upsertTitleMaterial(item);
+    return item;
+  }
+
+  Future<String> titleMaterialAbsolutePath(TitleMaterial item) =>
+      LocalFileArchive.absolutePath(
+        root: LocalFileArchive.titleMaterialRoot,
+        classId: LocalFileArchive.teacherOwner,
+        ownerId: 'all',
+        storedName: item.storedName,
+      );
+
+  Future<void> deleteTitleMaterial(String id) async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query(
+      'title_materials',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isNotEmpty) {
+      final item = TitleMaterial.fromMap(rows.first);
+      await LocalFileArchive.deleteFile(
+        root: LocalFileArchive.titleMaterialRoot,
+        classId: LocalFileArchive.teacherOwner,
+        ownerId: 'all',
+        storedName: item.storedName,
+      );
+    }
+    await db.delete('title_materials', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<List<DisciplineRecord>> getDisciplineRecords({String? date}) async {
@@ -2358,7 +2551,7 @@ class ClassRepository {
       classPrefs[id] = await _exportClassPrefs(id);
     }
     return {
-      'version': 10,
+      'version': 11,
       'exportedAt': DateTime.now().toIso8601String(),
       'current_class_id': _prefs.getString(_currentClassPrefKey),
       'classes': classes,
@@ -2382,6 +2575,10 @@ class ClassRepository {
       'lesson_files': await db.query('lesson_files'),
       'exam_files': await db.query('exam_files'),
       'salary_records': await db.query('salary_records'),
+      'leave_records': await db.query('leave_records'),
+      'discipline_records': await db.query('discipline_records'),
+      'student_honors': await db.query('student_honors'),
+      'title_materials': await db.query('title_materials'),
       'class_prefs': classPrefs,
       'profile': {
         'name': loadProfile().name,
@@ -2418,6 +2615,10 @@ class ClassRepository {
       'semesters',
       'lesson_files',
       'lesson_units',
+      'leave_records',
+      'discipline_records',
+      'student_honors',
+      'title_materials',
       'classes',
       'salary_records',
     ]) {
@@ -2486,6 +2687,10 @@ class ClassRepository {
       await insertAll('lesson_files', data['lesson_files'] as List?);
       await insertAll('exam_files', data['exam_files'] as List?);
       await insertAll('salary_records', data['salary_records'] as List?);
+      await insertAll('leave_records', data['leave_records'] as List?);
+      await insertAll('discipline_records', data['discipline_records'] as List?);
+      await insertAll('student_honors', data['student_honors'] as List?);
+      await insertAll('title_materials', data['title_materials'] as List?);
 
       final savedId = data['current_class_id'] as String?;
       final allClasses = await getClasses();
@@ -2564,6 +2769,19 @@ class ClassRepository {
       await insertScoped('lesson_units', data['lesson_units'] as List?);
       await insertScoped('lesson_files', data['lesson_files'] as List?);
       await insertScoped('exam_files', data['exam_files'] as List?);
+      await insertScoped('leave_records', data['leave_records'] as List?);
+      await insertScoped(
+        'discipline_records',
+        data['discipline_records'] as List?,
+      );
+      await insertScoped('student_honors', data['student_honors'] as List?);
+      for (final raw in data['title_materials'] as List? ?? []) {
+        await db.insert(
+          'title_materials',
+          Map<String, Object?>.from(raw as Map),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
 
       final presetsRaw = data['point_presets'] as List?;
       if (presetsRaw != null && presetsRaw.isNotEmpty) {

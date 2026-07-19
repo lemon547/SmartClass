@@ -3,7 +3,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 /// 统一图标：优先选手机端常见语义（更多、下载、导入等）
 abstract final class AppIcons {
-  static const IconData logo = LucideIcons.graduationCap;
+  /// 品牌兜底：班级/学生语义（启动页用 AppBrandMark）
+  static const IconData logo = LucideIcons.users;
   static const IconData home = LucideIcons.house;
   static const IconData students = LucideIcons.users;
   /// 底部「班级」Tab

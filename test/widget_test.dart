@@ -15,6 +15,6 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(find.textContaining('班主任助手'), findsOneWidget);
+    expect(find.textContaining('Smart Class'), findsOneWidget);
   });
 }

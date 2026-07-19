@@ -19,7 +19,7 @@ class AppDatabase {
     final path = p.join(dir.path, 'smart_class.db');
     return openDatabase(
       path,
-      version: 18,
+      version: 19,
       onCreate: (db, version) async {
         await _createV1(db);
         await _createV2(db);
@@ -39,6 +39,7 @@ class AppDatabase {
         await _createV16(db);
         await _createV17(db);
         await _createV18(db);
+        await _createV19(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
@@ -58,6 +59,7 @@ class AppDatabase {
         if (oldVersion < 16) await _createV16(db);
         if (oldVersion < 17) await _createV17(db);
         if (oldVersion < 18) await _createV18(db);
+        if (oldVersion < 19) await _createV19(db);
       },
     );
   }
@@ -493,5 +495,68 @@ class AppDatabase {
         'ALTER TABLE exam_scores ADD COLUMN subject_ranks TEXT DEFAULT ""',
       );
     } catch (_) {}
+  }
+
+  /// 请假闭环扩列 + 学生荣誉 + 职称材料
+  Future<void> _createV19(Database db) async {
+    for (final sql in [
+      "ALTER TABLE leave_records ADD COLUMN start_at TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE leave_records ADD COLUMN end_at TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE leave_records ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+      "ALTER TABLE leave_records ADD COLUMN returned_at TEXT",
+      "ALTER TABLE leave_records ADD COLUMN proof_stored_name TEXT NOT NULL DEFAULT ''",
+      "ALTER TABLE leave_records ADD COLUMN proof_original_name TEXT NOT NULL DEFAULT ''",
+    ]) {
+      try {
+        await db.execute(sql);
+      } catch (_) {}
+    }
+    // 回填旧请假起止时间
+    final rows = await db.query('leave_records');
+    for (final row in rows) {
+      final startAt = (row['start_at'] as String?) ?? '';
+      if (startAt.isNotEmpty) continue;
+      final date = (row['date'] as String?) ?? '';
+      if (date.isEmpty) continue;
+      await db.update(
+        'leave_records',
+        {
+          'start_at': '${date}T00:00:00.000',
+          'end_at': '${date}T23:59:59.000',
+          'status': (row['status'] as String?)?.isNotEmpty == true
+              ? row['status']
+              : 'active',
+        },
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS student_honors (
+        id TEXT PRIMARY KEY,
+        class_id TEXT NOT NULL,
+        student_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        date TEXT NOT NULL DEFAULT '',
+        level TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS title_materials (
+        id TEXT PRIMARY KEY,
+        year INTEGER NOT NULL,
+        category TEXT NOT NULL DEFAULT '其他',
+        title TEXT NOT NULL,
+        stored_name TEXT NOT NULL,
+        original_name TEXT NOT NULL,
+        mime_hint TEXT NOT NULL DEFAULT '',
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 }

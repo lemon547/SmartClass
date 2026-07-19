@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/screens/timetable/widgets/tt_style.dart';
 
-/// 课表格内课程块：标题 14/w600，副标题 11
+/// 课表格内课程块：科目 + 班级 + 节次，尽量不截断
 class CourseCard extends StatelessWidget {
   const CourseCard({
     super.key,
@@ -19,45 +19,59 @@ class CourseCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final lesson = lessons.first;
     final tint = subjectTint(lesson.subject);
-    final subtitle = _subtitle(lessons, showClass: showClass);
+    final classLine = showClass ? _classLine(lessons) : '';
 
     return Stack(
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(5, 6, 5, 4),
+          padding: const EdgeInsets.fromLTRB(5, 7, 5, 5),
           decoration: BoxDecoration(
             color: tint.$1,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 lesson.subject,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
                 style: TextStyle(
                   color: tint.$2,
                   fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   height: 1.15,
                 ),
               ),
-              if (subtitle.isNotEmpty) ...[
+              if (classLine.isNotEmpty) ...[
                 const SizedBox(height: 3),
                 Text(
-                  subtitle,
+                  classLine,
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                  overflow: TextOverflow.visible,
                   style: TextStyle(
-                    color: tint.$2.withValues(alpha: 0.78),
+                    color: tint.$2.withValues(alpha: 0.82),
                     fontSize: 11,
-                    height: 1.15,
-                    fontWeight: FontWeight.w400,
+                    height: 1.2,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
+              const Spacer(),
+              Text(
+                lesson.periodLabel.isNotEmpty
+                    ? lesson.periodLabel
+                    : '第${lesson.period}节',
+                maxLines: 1,
+                style: TextStyle(
+                  color: tint.$2.withValues(alpha: 0.65),
+                  fontSize: 10,
+                  height: 1.1,
+                ),
+              ),
             ],
           ),
         ),
@@ -77,19 +91,17 @@ class CourseCard extends StatelessWidget {
     );
   }
 
-  static String _subtitle(
-    List<TodayTeachingLesson> lessons, {
-    required bool showClass,
-  }) {
-    if (showClass) {
-      final titles = lessons
-          .map((e) => e.classTitle.trim())
-          .where((t) => t.isNotEmpty)
-          .toList();
-      if (titles.isNotEmpty) return titles.join('、');
+  static String _classLine(List<TodayTeachingLesson> lessons) {
+    final titles = lessons
+        .map((e) => e.classTitle.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (titles.isEmpty) {
+      final loc = lessons.first.location.trim();
+      return loc;
     }
-    final loc = lessons.first.location.trim();
-    if (loc.isNotEmpty) return loc;
-    return '';
+    if (titles.length == 1) return titles.first;
+    // 多班：换行列出，避免「班、高一…」截断
+    return titles.join('\n');
   }
 }

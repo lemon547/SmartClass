@@ -1,6 +1,7 @@
 package com.smartclass.smart_class
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,6 +13,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import io.flutter.embedding.android.FlutterFragmentActivity
@@ -33,9 +35,11 @@ class MainActivity : FlutterFragmentActivity() {
     private var shareEventSink: EventChannel.EventSink? = null
     private val pendingShares = mutableListOf<Map<String, String>>()
     private var pickPendingResult: MethodChannel.Result? = null
+    private var speechPendingResult: MethodChannel.Result? = null
 
     companion object {
         private const val REQ_PICK_WECHAT = 0x57C1
+        private const val REQ_SPEECH = 0x57C2
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -170,6 +174,9 @@ class MainActivity : FlutterFragmentActivity() {
                             result.error("record_cancel", e.message, null)
                         }
                     }
+                    "recognizeSpeech" -> {
+                        startSpeechRecognize(result)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -177,6 +184,22 @@ class MainActivity : FlutterFragmentActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_SPEECH) {
+            val pending = speechPendingResult
+            speechPendingResult = null
+            if (pending == null) {
+                @Suppress("DEPRECATION")
+                super.onActivityResult(requestCode, resultCode, data)
+                return
+            }
+            if (resultCode != Activity.RESULT_OK || data == null) {
+                pending.success("")
+                return
+            }
+            val matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            pending.success(matches?.firstOrNull()?.trim().orEmpty())
+            return
+        }
         if (requestCode == REQ_PICK_WECHAT) {
             val pending = pickPendingResult
             pickPendingResult = null
@@ -489,6 +512,33 @@ class MainActivity : FlutterFragmentActivity() {
         pendingShares.clear()
         for (item in copy) {
             sink.success(item)
+        }
+    }
+
+    private fun startSpeechRecognize(result: MethodChannel.Result) {
+        if (speechPendingResult != null) {
+            result.error("busy", "speech already in progress", null)
+            return
+        }
+        speechPendingResult = result
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                )
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "请说出你的待办")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQ_SPEECH)
+        } catch (_: ActivityNotFoundException) {
+            speechPendingResult = null
+            result.error("unavailable", "设备不支持语音识别，请安装谷歌语音服务", null)
+        } catch (e: Exception) {
+            speechPendingResult = null
+            result.error("speech_failed", e.message, null)
         }
     }
 

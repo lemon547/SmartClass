@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/grades/exam_detail_screen.dart';
+import 'package:smart_class/screens/students/honor_editor.dart';
 import 'package:smart_class/screens/students/student_edit_screen.dart';
 import 'package:smart_class/services/file_share.dart';
 import 'package:smart_class/theme/app_icons.dart';
@@ -22,6 +23,7 @@ class StudentDetailScreen extends StatefulWidget {
 class _StudentDetailScreenState extends State<StudentDetailScreen> {
   List<AttendanceRecord> _att = [];
   List<PointRecord> _pts = [];
+  List<StudentHonor> _honors = [];
   bool _loading = true;
   bool _sharing = false;
 
@@ -35,13 +37,22 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
     final ctrl = context.read<ClassController>();
     final att = await ctrl.attendanceOf(widget.studentId);
     final pts = await ctrl.pointsOf(widget.studentId);
+    final honors = await ctrl.honorsOf(widget.studentId);
     await ctrl.ensureAllExamScores();
     if (!mounted) return;
     setState(() {
       _att = att;
       _pts = pts;
+      _honors = honors;
       _loading = false;
     });
+  }
+
+  Future<void> _reloadHonors() async {
+    final honors =
+        await context.read<ClassController>().honorsOf(widget.studentId);
+    if (!mounted) return;
+    setState(() => _honors = honors);
   }
 
   @override
@@ -88,20 +99,35 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                 GroupedSection(
                   header: '资料',
                   children: [
-                    GroupedTile(title: '学号', trailing: Text(s.studentNo.isEmpty ? '—' : s.studentNo)),
-                    GroupedTile(title: '小组', trailing: Text(s.groupName.isEmpty ? '—' : s.groupName)),
                     GroupedTile(
-                      title: '班委',
-                      trailing: Text(s.role.isEmpty ? '—' : s.role),
+                      title: '学号',
+                      trailing: Text(s.studentNo.isEmpty ? '—' : s.studentNo),
+                    ),
+                    GroupedTile(
+                      title: '小组',
+                      trailing: Text(s.groupName.isEmpty ? '—' : s.groupName),
+                    ),
+                    GroupedTile(
+                      title: '班级职务',
+                      subtitle: s.role.isEmpty ? null : s.role,
+                      trailing: s.role.isEmpty
+                          ? const Text('普通学生')
+                          : Icon(AppIcons.trophy, size: 18, color: AppTheme.blue),
                     ),
                     GroupedTile(
                       title: '生日',
                       trailing: Text(s.birthday.isEmpty ? '—' : s.birthday),
                     ),
-                    GroupedTile(title: '性别', trailing: Text(
-                      s.gender == '男' || s.gender == '女' ? s.gender : '—',
-                    )),
-                    GroupedTile(title: '电话', trailing: Text(s.phone.isEmpty ? '—' : s.phone)),
+                    GroupedTile(
+                      title: '性别',
+                      trailing: Text(
+                        s.gender == '男' || s.gender == '女' ? s.gender : '—',
+                      ),
+                    ),
+                    GroupedTile(
+                      title: '电话',
+                      trailing: Text(s.phone.isEmpty ? '—' : s.phone),
+                    ),
                     GroupedTile(
                       title: '家庭住址',
                       subtitle: s.address.isEmpty ? null : s.address,
@@ -116,10 +142,78 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 18),
+                GroupedSection(
+                  header: '荣誉记录 · ${_honors.length}',
+                  footer: '点按编辑，长按删除',
+                  children: [
+                    GroupedTile(
+                      title: '添加荣誉',
+                      leading: Icon(AppIcons.plus, color: AppTheme.blue),
+                      onTap: () async {
+                        await showHonorEditor(
+                          context,
+                          studentId: widget.studentId,
+                        );
+                        await _reloadHonors();
+                      },
+                    ),
+                    if (_honors.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          '暂无荣誉记录',
+                          style: TextStyle(color: AppTheme.tertiaryLabel),
+                        ),
+                      )
+                    else
+                      for (final h in _honors)
+                        GroupedTile(
+                          title: h.title,
+                          subtitle: [
+                            if (h.date.isNotEmpty) h.date,
+                            if (h.level.isNotEmpty) h.level,
+                            if (h.note.isNotEmpty) h.note,
+                          ].join(' · '),
+                          onTap: () async {
+                            await showHonorEditor(
+                              context,
+                              studentId: widget.studentId,
+                              existing: h,
+                            );
+                            await _reloadHonors();
+                          },
+                          onLongPress: () async {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('删除荣誉？'),
+                                content: Text(h.title),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('取消'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('删除'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (ok == true && context.mounted) {
+                              await context
+                                  .read<ClassController>()
+                                  .deleteStudentHonor(h.id);
+                              await _reloadHonors();
+                            }
+                          },
+                        ),
+                  ],
+                ),
+                const SizedBox(height: 18),
                 Builder(
                   builder: (context) {
-                    final grades =
-                        ctrl.examScoresOfStudent(widget.studentId);
+                    final grades = ctrl.examScoresOfStudent(widget.studentId);
                     return GroupedSection(
                       header: '成绩 · ${grades.length}',
                       footer: grades.isEmpty
@@ -163,14 +257,18 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                   children: [
                     if (_pts.isEmpty)
                       Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Text('暂无', style: TextStyle(color: AppTheme.tertiaryLabel)),
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          '暂无',
+                          style: TextStyle(color: AppTheme.tertiaryLabel),
+                        ),
                       )
                     else
                       for (final r in _pts.take(20))
                         GroupedTile(
                           title: r.reason,
-                          subtitle: DateFormat('M/d HH:mm').format(r.createdAt),
+                          subtitle:
+                              DateFormat('M/d HH:mm').format(r.createdAt),
                           trailing: Text(
                             '${r.delta > 0 ? '+' : ''}${r.delta}',
                             style: const TextStyle(fontSize: 17),
@@ -184,8 +282,11 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                   children: [
                     if (_att.isEmpty)
                       Padding(
-                        padding: EdgeInsets.all(18),
-                        child: Text('暂无', style: TextStyle(color: AppTheme.tertiaryLabel)),
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          '暂无',
+                          style: TextStyle(color: AppTheme.tertiaryLabel),
+                        ),
                       )
                     else
                       for (final r in _att.take(20))

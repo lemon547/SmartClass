@@ -168,11 +168,9 @@ class _GradesScreenState extends State<GradesScreen> {
             ),
       ];
     }
+    // 无分组时不显示「成绩报告 · N」——标题栏与筛选项已够
     return [
       GroupedSection(
-        header: filter == null
-            ? '成绩报告 · ${list.length}'
-            : '$filter · ${list.length}',
         children: [
           for (final e in list)
             _ExamTile(

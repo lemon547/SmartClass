@@ -833,14 +833,39 @@ class WorkLogAttachment {
       );
 }
 
+enum LeaveStatus { active, returned, cancelled }
+
+extension LeaveStatusX on LeaveStatus {
+  String get storage => name;
+
+  String get label => switch (this) {
+        LeaveStatus.active => '请假中',
+        LeaveStatus.returned => '已销假',
+        LeaveStatus.cancelled => '已取消',
+      };
+
+  static LeaveStatus fromStorage(String? raw) => switch (raw) {
+        'returned' => LeaveStatus.returned,
+        'cancelled' => LeaveStatus.cancelled,
+        _ => LeaveStatus.active,
+      };
+}
+
 /// 请假记录
 class LeaveRecord {
   final String id;
   final String studentId;
+  /// 兼容旧字段：请假起始日 YYYY-MM-DD
   final String date;
   final String reason;
   final String pickup;
   final DateTime createdAt;
+  final DateTime startAt;
+  final DateTime endAt;
+  final LeaveStatus status;
+  final DateTime? returnedAt;
+  final String proofStoredName;
+  final String proofOriginalName;
 
   const LeaveRecord({
     required this.id,
@@ -849,7 +874,22 @@ class LeaveRecord {
     this.reason = '',
     this.pickup = '',
     required this.createdAt,
+    required this.startAt,
+    required this.endAt,
+    this.status = LeaveStatus.active,
+    this.returnedAt,
+    this.proofStoredName = '',
+    this.proofOriginalName = '',
   });
+
+  bool get isActive => status == LeaveStatus.active;
+
+  bool get isOverdue {
+    if (!isActive) return false;
+    return DateTime.now().isAfter(endAt);
+  }
+
+  bool get hasProof => proofStoredName.isNotEmpty;
 
   Map<String, Object?> toMap() => {
         'id': id,
@@ -858,16 +898,208 @@ class LeaveRecord {
         'reason': reason,
         'pickup': pickup,
         'created_at': createdAt.toIso8601String(),
+        'start_at': startAt.toIso8601String(),
+        'end_at': endAt.toIso8601String(),
+        'status': status.storage,
+        'returned_at': returnedAt?.toIso8601String(),
+        'proof_stored_name': proofStoredName,
+        'proof_original_name': proofOriginalName,
       };
 
-  factory LeaveRecord.fromMap(Map<String, Object?> map) => LeaveRecord(
+  factory LeaveRecord.fromMap(Map<String, Object?> map) {
+    final date = (map['date'] as String?) ?? '';
+    DateTime dayStart;
+    DateTime dayEnd;
+    try {
+      final parts = date.split('-');
+      final y = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      final d = int.parse(parts[2]);
+      dayStart = DateTime(y, m, d);
+      dayEnd = DateTime(y, m, d, 23, 59, 59);
+    } catch (_) {
+      dayStart = DateTime.now();
+      dayEnd = dayStart.add(const Duration(hours: 23, minutes: 59));
+    }
+    final startRaw = map['start_at'] as String?;
+    final endRaw = map['end_at'] as String?;
+    return LeaveRecord(
+      id: map['id']! as String,
+      studentId: map['student_id']! as String,
+      date: date,
+      reason: (map['reason'] as String?) ?? '',
+      pickup: (map['pickup'] as String?) ?? '',
+      createdAt: DateTime.parse(map['created_at']! as String),
+      startAt: (startRaw != null && startRaw.isNotEmpty)
+          ? DateTime.parse(startRaw)
+          : dayStart,
+      endAt: (endRaw != null && endRaw.isNotEmpty)
+          ? DateTime.parse(endRaw)
+          : dayEnd,
+      status: LeaveStatusX.fromStorage(map['status'] as String?),
+      returnedAt: () {
+        final r = map['returned_at'] as String?;
+        if (r == null || r.isEmpty) return null;
+        return DateTime.tryParse(r);
+      }(),
+      proofStoredName: (map['proof_stored_name'] as String?) ?? '',
+      proofOriginalName: (map['proof_original_name'] as String?) ?? '',
+    );
+  }
+
+  LeaveRecord copyWith({
+    String? id,
+    String? studentId,
+    String? date,
+    String? reason,
+    String? pickup,
+    DateTime? createdAt,
+    DateTime? startAt,
+    DateTime? endAt,
+    LeaveStatus? status,
+    DateTime? returnedAt,
+    bool clearReturnedAt = false,
+    String? proofStoredName,
+    String? proofOriginalName,
+  }) {
+    return LeaveRecord(
+      id: id ?? this.id,
+      studentId: studentId ?? this.studentId,
+      date: date ?? this.date,
+      reason: reason ?? this.reason,
+      pickup: pickup ?? this.pickup,
+      createdAt: createdAt ?? this.createdAt,
+      startAt: startAt ?? this.startAt,
+      endAt: endAt ?? this.endAt,
+      status: status ?? this.status,
+      returnedAt:
+          clearReturnedAt ? null : (returnedAt ?? this.returnedAt),
+      proofStoredName: proofStoredName ?? this.proofStoredName,
+      proofOriginalName: proofOriginalName ?? this.proofOriginalName,
+    );
+  }
+}
+
+/// 学生荣誉记录
+class StudentHonor {
+  final String id;
+  final String studentId;
+  final String title;
+  final String date;
+  final String level;
+  final String note;
+  final DateTime createdAt;
+
+  const StudentHonor({
+    required this.id,
+    required this.studentId,
+    required this.title,
+    this.date = '',
+    this.level = '',
+    this.note = '',
+    required this.createdAt,
+  });
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'student_id': studentId,
+        'title': title,
+        'date': date,
+        'level': level,
+        'note': note,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory StudentHonor.fromMap(Map<String, Object?> map) => StudentHonor(
         id: map['id']! as String,
         studentId: map['student_id']! as String,
-        date: map['date']! as String,
-        reason: (map['reason'] as String?) ?? '',
-        pickup: (map['pickup'] as String?) ?? '',
+        title: map['title']! as String,
+        date: (map['date'] as String?) ?? '',
+        level: (map['level'] as String?) ?? '',
+        note: (map['note'] as String?) ?? '',
         createdAt: DateTime.parse(map['created_at']! as String),
       );
+}
+
+/// 职称材料（老师个人，不绑班级）
+class TitleMaterial {
+  final String id;
+  final int year;
+  final String category;
+  final String title;
+  final String storedName;
+  final String originalName;
+  final String mimeHint;
+  final int sizeBytes;
+  final DateTime createdAt;
+
+  const TitleMaterial({
+    required this.id,
+    required this.year,
+    required this.category,
+    required this.title,
+    required this.storedName,
+    required this.originalName,
+    this.mimeHint = '',
+    this.sizeBytes = 0,
+    required this.createdAt,
+  });
+
+  static const categories = [
+    '教学成果',
+    '继续教育',
+    '获奖证书',
+    '论文论著',
+    '其他',
+  ];
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'year': year,
+        'category': category,
+        'title': title,
+        'stored_name': storedName,
+        'original_name': originalName,
+        'mime_hint': mimeHint,
+        'size_bytes': sizeBytes,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory TitleMaterial.fromMap(Map<String, Object?> map) => TitleMaterial(
+        id: map['id']! as String,
+        year: (map['year'] as num?)?.toInt() ?? DateTime.now().year,
+        category: (map['category'] as String?) ?? '其他',
+        title: (map['title'] as String?) ?? '',
+        storedName: (map['stored_name'] as String?) ?? '',
+        originalName: (map['original_name'] as String?) ?? '',
+        mimeHint: (map['mime_hint'] as String?) ?? '',
+        sizeBytes: (map['size_bytes'] as num?)?.toInt() ?? 0,
+        createdAt: DateTime.parse(map['created_at']! as String),
+      );
+
+  TitleMaterial copyWith({
+    String? id,
+    int? year,
+    String? category,
+    String? title,
+    String? storedName,
+    String? originalName,
+    String? mimeHint,
+    int? sizeBytes,
+    DateTime? createdAt,
+  }) {
+    return TitleMaterial(
+      id: id ?? this.id,
+      year: year ?? this.year,
+      category: category ?? this.category,
+      title: title ?? this.title,
+      storedName: storedName ?? this.storedName,
+      originalName: originalName ?? this.originalName,
+      mimeHint: mimeHint ?? this.mimeHint,
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
 }
 
 /// 违纪处理记录

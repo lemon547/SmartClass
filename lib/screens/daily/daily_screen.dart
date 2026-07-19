@@ -10,7 +10,7 @@ import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/class_switcher_sheet.dart';
 
-/// 日常管理：请假 / 违纪 / 加扣分 / 规则提醒
+/// 班级日常：请假 / 违纪 / 加扣分 / 规则提醒
 class DailyScreen extends StatelessWidget {
   const DailyScreen({super.key});
 
@@ -38,7 +38,7 @@ class DailyScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '日常管理',
+                        '班级',
                         style: TextStyle(
                           fontSize: 34,
                           fontWeight: FontWeight.w700,

@@ -4,13 +4,13 @@ import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/providers/theme_controller.dart';
 import 'package:smart_class/screens/daily/daily_screen.dart';
 import 'package:smart_class/screens/home/home_screen.dart';
-import 'package:smart_class/screens/students/students_screen.dart';
-import 'package:smart_class/screens/work_logs/work_logs_screen.dart';
+import 'package:smart_class/screens/more/more_screen.dart';
+import 'package:smart_class/screens/teaching/teaching_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/lazy_sheep_fab.dart';
 
-/// 底部 Tab：今日 / 日常 / 留痕 / 学生
+/// 底部 Tab：首页 / 教学 / 班级 / 我的
 class ShellScreen extends StatefulWidget {
   const ShellScreen({super.key});
 
@@ -57,11 +57,9 @@ class _ShellScreenState extends State<ShellScreen> {
 
     final slotPages = <Widget?>[
       _visited.contains(0) ? HomeScreen(key: ValueKey('home-$k')) : null,
-      _visited.contains(1) ? DailyScreen(key: ValueKey('daily-$k')) : null,
-      _visited.contains(2) ? WorkLogsScreen(key: ValueKey('logs-$k')) : null,
-      _visited.contains(3)
-          ? StudentsScreen(key: ValueKey('students-$k'))
-          : null,
+      _visited.contains(1) ? TeachingScreen(key: ValueKey('teach-$k')) : null,
+      _visited.contains(2) ? DailyScreen(key: ValueKey('daily-$k')) : null,
+      _visited.contains(3) ? MoreScreen(key: ValueKey('more-$k')) : null,
     ];
 
     return Scaffold(
@@ -86,22 +84,22 @@ class _ShellScreenState extends State<ShellScreen> {
           NavigationDestination(
             icon: Icon(AppIcons.home),
             selectedIcon: Icon(AppIcons.home),
-            label: '今日',
+            label: '首页',
           ),
           NavigationDestination(
-            icon: Icon(AppIcons.daily),
-            selectedIcon: Icon(AppIcons.daily),
-            label: '日常',
+            icon: Icon(AppIcons.book),
+            selectedIcon: Icon(AppIcons.book),
+            label: '教学',
           ),
           NavigationDestination(
-            icon: Icon(AppIcons.traces),
-            selectedIcon: Icon(AppIcons.traces),
-            label: '留痕',
+            icon: Icon(AppIcons.classes),
+            selectedIcon: Icon(AppIcons.classes),
+            label: '班级',
           ),
           NavigationDestination(
-            icon: Icon(AppIcons.students),
-            selectedIcon: Icon(AppIcons.students),
-            label: '学生',
+            icon: Icon(AppIcons.more),
+            selectedIcon: Icon(AppIcons.more),
+            label: '我的',
           ),
         ],
       ),

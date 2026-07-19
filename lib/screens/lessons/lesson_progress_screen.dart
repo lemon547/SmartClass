@@ -13,7 +13,10 @@ import 'package:smart_class/screens/lessons/lesson_edit_screen.dart';
 
 /// 授课进度 + PPT/课件本地存档
 class LessonProgressScreen extends StatefulWidget {
-  const LessonProgressScreen({super.key});
+  const LessonProgressScreen({super.key, this.embedded = false});
+
+  /// 嵌在「教学」Tab 内时隐藏外层 AppBar
+  final bool embedded;
 
   @override
   State<LessonProgressScreen> createState() => _LessonProgressScreenState();
@@ -30,32 +33,46 @@ class _LessonProgressScreenState extends State<LessonProgressScreen> {
       list = list.where((e) => e.status == _filter).toList();
     }
 
-    return Scaffold(
-      appBar: PageAppBar(
-        title: const Text('授课进度'),
-        actions: [
-          IconButton(
-            tooltip: '导入导出',
-            onPressed: () => showExcelImportActions(
-              context: context,
-              title: '授课进度',
-              downloadTemplate: () =>
-                  context.read<ClassController>().exportLessonTemplateFile(),
-              importBytes: (bytes, _) =>
-                  context.read<ClassController>().importLessonFromBytes(bytes),
-            ),
-            icon: const Icon(AppIcons.moreVert),
-          ),
-          IconButton(
-            tooltip: '添加课时',
-            onPressed: () => _editUnit(context),
-            icon: const Icon(Icons.add),
-          ),
-        ],
+    final actions = [
+      IconButton(
+        tooltip: '导入导出',
+        onPressed: () => showExcelImportActions(
+          context: context,
+          title: '备课',
+          downloadTemplate: () =>
+              context.read<ClassController>().exportLessonTemplateFile(),
+          importBytes: (bytes, _) =>
+              context.read<ClassController>().importLessonFromBytes(bytes),
+        ),
+        icon: const Icon(AppIcons.moreVert),
       ),
+      IconButton(
+        tooltip: '添加课时',
+        onPressed: () => _editUnit(context),
+        icon: const Icon(Icons.add),
+      ),
+    ];
+
+    return Scaffold(
+      appBar: widget.embedded
+          ? null
+          : PageAppBar(
+              title: const Text('备课'),
+              actions: actions,
+            ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 28),
         children: [
+          if (widget.embedded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  ...actions,
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Wrap(

@@ -11,6 +11,7 @@ class SubjectFilter extends StatelessWidget {
     required this.onChanged,
     this.allowAll = true,
     this.allLabel = '全部科目',
+    this.compact = false,
   });
 
   final String label;
@@ -19,6 +20,8 @@ class SubjectFilter extends StatelessWidget {
   final ValueChanged<String?> onChanged;
   final bool allowAll;
   final String allLabel;
+  /// 芯片样式：只显示「语文 ▼」，不显示「科目：」
+  final bool compact;
 
   Future<void> _openSheet(BuildContext context) async {
     await showModalBottomSheet<void>(
@@ -106,6 +109,38 @@ class SubjectFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final display = current ?? allLabel;
+    if (compact) {
+      return Material(
+        color: TtStyle.accentSoft,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: () => _openSheet(context),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  display,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: TtStyle.accent,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.keyboard_arrow_down,
+                  size: 16,
+                  color: TtStyle.accent,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Material(
       color: Colors.transparent,
       child: InkWell(

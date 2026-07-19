@@ -1671,9 +1671,21 @@ class ClassController extends ChangeNotifier {
   }
 
   int get todayLeaveCount {
-    final d = todayKey;
-    return leaveRecords.where((e) => e.date == d).length;
+    final now = DateTime.now();
+    return leaveRecords.where((e) {
+      if (!e.isActive) return false;
+      return !now.isBefore(e.startAt) && !now.isAfter(e.endAt);
+    }).length;
   }
+
+  int get activeLeaveCount =>
+      leaveRecords.where((e) => e.isActive).length;
+
+  int get overdueLeaveCount =>
+      leaveRecords.where((e) => e.isOverdue).length;
+
+  List<LeaveRecord> get overdueLeaves =>
+      leaveRecords.where((e) => e.isOverdue).toList();
 
   int get todayDisciplineCount {
     final d = todayKey;
@@ -1735,15 +1747,31 @@ class ClassController extends ChangeNotifier {
     required String date,
     String reason = '',
     String pickup = '',
+    DateTime? startAt,
+    DateTime? endAt,
+    String? id,
+    String proofStoredName = '',
+    String proofOriginalName = '',
+    LeaveStatus status = LeaveStatus.active,
+    DateTime? returnedAt,
   }) async {
+    final start = startAt ?? DateTime.parse('${date}T00:00:00');
+    final end = endAt ?? DateTime.parse('${date}T23:59:59');
+    final leaveId = id ?? _uuid.v4();
     await _repo.upsertLeaveRecord(
       LeaveRecord(
-        id: _uuid.v4(),
+        id: leaveId,
         studentId: studentId,
         date: date,
         reason: reason.trim(),
         pickup: pickup.trim(),
         createdAt: DateTime.now(),
+        startAt: start,
+        endAt: end,
+        status: status,
+        returnedAt: returnedAt,
+        proofStoredName: proofStoredName,
+        proofOriginalName: proofOriginalName,
       ),
     );
     await _repo.setAttendance(
@@ -1756,6 +1784,112 @@ class ClassController extends ChangeNotifier {
       selectedAttendance = await _repo.getAttendanceByDate(selectedDate);
     }
     await refreshDailyOps();
+  }
+
+  Future<void> returnLeave(String leaveId) async {
+    LeaveRecord? found;
+    for (final e in leaveRecords) {
+      if (e.id == leaveId) {
+        found = e;
+        break;
+      }
+    }
+    if (found == null) return;
+    await _repo.upsertLeaveRecord(
+      found.copyWith(
+        status: LeaveStatus.returned,
+        returnedAt: DateTime.now(),
+      ),
+    );
+    await refreshDailyOps();
+  }
+
+  Future<void> deleteLeave(String leaveId) async {
+    await _repo.deleteLeaveRecord(leaveId);
+    await refreshDailyOps();
+  }
+
+  Future<({String storedName, String originalName})> importLeaveProof({
+    required String leaveId,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    final r = await _repo.importLeaveProof(
+      leaveId: leaveId,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    return (storedName: r.storedName, originalName: r.originalName);
+  }
+
+  Future<String> leaveProofPath(LeaveRecord item) =>
+      _repo.leaveProofAbsolutePath(item);
+
+  // ── Student honors ────────────────────────────────────────────────────────
+
+  Future<List<StudentHonor>> honorsOf(String studentId) =>
+      _repo.getStudentHonors(studentId: studentId);
+
+  Future<void> saveStudentHonor(StudentHonor honor) async {
+    await _repo.upsertStudentHonor(honor);
+    notifyListeners();
+  }
+
+  Future<void> deleteStudentHonor(String id) async {
+    await _repo.deleteStudentHonor(id);
+    notifyListeners();
+  }
+
+  // ── Title materials ───────────────────────────────────────────────────────
+
+  List<TitleMaterial> titleMaterials = [];
+
+  Future<void> refreshTitleMaterials() async {
+    titleMaterials = await _repo.getTitleMaterials();
+    notifyListeners();
+  }
+
+  Future<TitleMaterial> importTitleMaterial({
+    required int year,
+    required String category,
+    required String title,
+    required String sourcePath,
+    required String originalName,
+  }) async {
+    final item = await _repo.importTitleMaterial(
+      year: year,
+      category: category,
+      title: title,
+      sourcePath: sourcePath,
+      originalName: originalName,
+    );
+    await refreshTitleMaterials();
+    return item;
+  }
+
+  Future<void> updateTitleMaterial(TitleMaterial item) async {
+    await _repo.upsertTitleMaterial(item);
+    await refreshTitleMaterials();
+  }
+
+  Future<void> deleteTitleMaterial(String id) async {
+    await _repo.deleteTitleMaterial(id);
+    await refreshTitleMaterials();
+  }
+
+  Future<String> titleMaterialPath(TitleMaterial item) =>
+      _repo.titleMaterialAbsolutePath(item);
+
+  Future<void> applySmartSeats(Map<String, (int, int)> seats) async {
+    await _repo.applySeatMap(seats);
+    students = await _repo.getStudents();
+    notifyListeners();
+  }
+
+  Future<void> swapStudentSeats(String aId, String bId) async {
+    await _repo.swapSeats(aId, bId);
+    students = await _repo.getStudents();
+    notifyListeners();
   }
 
   Future<void> saveDisciplineRecord({

@@ -12,6 +12,7 @@ import 'package:smart_class/providers/ai_settings_controller.dart';
 import 'package:smart_class/screens/legal/legal_doc_screen.dart';
 import 'package:smart_class/screens/more/ai_settings_screen.dart';
 import 'package:smart_class/screens/salary/salary_screen.dart';
+import 'package:smart_class/screens/title_materials/title_materials_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/theme/mascot_assets.dart';
@@ -55,6 +56,12 @@ class MoreScreen extends StatelessWidget {
               header: '个人',
               children: [
                 GroupedTile(
+                  leading: Icon(AppIcons.folder, color: AppTheme.blue, size: 22),
+                  title: '职称材料归档',
+                  subtitle: '按年份与分类保存、打开与分享',
+                  onTap: () => _push(context, const TitleMaterialsScreen()),
+                ),
+                GroupedTile(
                   leading: Icon(AppIcons.wallet, color: AppTheme.blue, size: 22),
                   title: '每月工资',
                   subtitle: ctrl.salaryRecords.isEmpty
@@ -70,6 +77,19 @@ class MoreScreen extends StatelessWidget {
                       ? const PaddiThemePreview()
                       : null,
                   onTap: () => _pickTheme(context),
+                ),
+                GroupedTile(
+                  leading: Icon(AppIcons.sparkles, color: AppTheme.blue, size: 22),
+                  title: 'AI 助手形象',
+                  subtitle: themeCtrl.fabMascotOption.label,
+                  trailing: Image.asset(
+                    themeCtrl.fabMascotAsset,
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                  onTap: () => _pickFabMascot(context),
                 ),
                 GroupedTile(
                   leading: Icon(AppIcons.sparkles, color: AppTheme.blue, size: 22),
@@ -152,7 +172,7 @@ class MoreScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
                 children: [
-                  const AppLogo(size: 36),
+                  const AppBrandMark(size: 72),
                   const SizedBox(height: 8),
                   Text(
                     AppInfo.name,
@@ -183,6 +203,110 @@ class MoreScreen extends StatelessWidget {
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _pickFabMascot(BuildContext context) async {
+    final themeCtrl = context.read<ThemeController>();
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.72;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxH),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+                    child: Text(
+                      'AI 助手形象',
+                      style: Theme.of(ctx).textTheme.titleMedium,
+                    ),
+                  ),
+                  Text(
+                    '悬浮入口与首页 AI 助教会同步使用',
+                    style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+                  ),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: GridView.count(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: 1.05,
+                      children: [
+                        for (final opt in MascotAssets.fabOptions)
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: themeCtrl.fabMascotId == opt.id
+                                  ? AppTheme.blue.withValues(alpha: 0.10)
+                                  : AppTheme.fill,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: themeCtrl.fabMascotId == opt.id
+                                    ? AppTheme.blue
+                                    : AppTheme.separator,
+                              ),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: () async {
+                                  await themeCtrl.setFabMascotId(opt.id);
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(10),
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: Image.asset(
+                                          opt.asset,
+                                          fit: BoxFit.contain,
+                                          gaplessPlayback: true,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        opt.label,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight:
+                                              themeCtrl.fabMascotId == opt.id
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w500,
+                                        ),
+                                      ),
+                                      Text(
+                                        opt.animated ? '动态' : '静态',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppTheme.tertiaryLabel,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _pickTheme(BuildContext context) async {

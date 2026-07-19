@@ -1,5 +1,5 @@
 name: smart_class
-description: 班主任助手 — 学生管理、随机点名、积分、考勤、值日、座位表（Android / iOS）
+description: Smart Class — 学生管理、随机点名、积分、考勤、值日、座位表（Android / iOS）
 publish_to: "none"
 version: 1.0.0+1
 
@@ -52,7 +52,9 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: assets/icons/app_icon.png
-  adaptive_icon_background: "#FFFFFF"
+  # 透明自适应底在多数启动器会变成黑圆；改用暖米色贴合太阳
+  adaptive_icon_background: "#FFF8DC"
   adaptive_icon_foreground: assets/icons/app_icon_foreground.png
-  adaptive_icon_foreground_inset: 0
+  adaptive_icon_foreground_inset: 12
   remove_alpha_ios: true
+  background_color_ios: "#FFF8DC"

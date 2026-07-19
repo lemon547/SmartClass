@@ -26,7 +26,7 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// AGP 9 + file_picker 11：插件不再自行 apply KGP，需补上否则 Kotlin 类编不过
+// AGP 9 + file_picker 11：补上 KGP；统一 Java/Kotlin 为 17，避免 17/21 冲突
 subprojects {
     pluginManager.withPlugin("com.android.library") {
         val kotlinDir = project.file("src/main/kotlin")
@@ -36,10 +36,19 @@ subprojects {
         }
     }
     pluginManager.withPlugin("org.jetbrains.kotlin.android") {
-        project.tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension>("kotlin") {
             compilerOptions {
                 jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
             }
+        }
+    }
+    tasks.withType<JavaCompile>().configureEach {
+        sourceCompatibility = JavaVersion.VERSION_17.toString()
+        targetCompatibility = JavaVersion.VERSION_17.toString()
+    }
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
     }
 }

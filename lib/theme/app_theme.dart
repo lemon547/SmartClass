@@ -49,10 +49,10 @@ class AppTheme {
   static bool get isDark => _palette == AppThemeMode.night;
 
   static Color get bg => switch (_palette) {
-        AppThemeMode.day => const Color(0xFFF2F2F7),
+        AppThemeMode.day => const Color(0xFFF5F6FA),
         AppThemeMode.night => const Color(0xFF000000),
         AppThemeMode.eyeCare => const Color(0xFFC7EDCC),
-        AppThemeMode.paddi => const Color(0xFFF2F2F7),
+        AppThemeMode.paddi => const Color(0xFFF5F6FA),
       };
 
   static Color get surface => switch (_palette) {

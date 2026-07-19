@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
+import 'package:smart_class/screens/students/honor_editor.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -33,6 +34,7 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
   late String _gender;
   late Set<String> _selectedRoles;
   late List<String> _roleOptions;
+  List<StudentHonor> _honors = [];
 
   @override
   void initState() {
@@ -52,6 +54,17 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
     for (final r in _selectedRoles) {
       if (!_roleOptions.contains(r)) _roleOptions.add(r);
     }
+    if (s != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadHonors());
+    }
+  }
+
+  Future<void> _loadHonors() async {
+    final id = widget.student?.id;
+    if (id == null) return;
+    final list = await context.read<ClassController>().honorsOf(id);
+    if (!mounted) return;
+    setState(() => _honors = list);
   }
 
   @override
@@ -88,7 +101,7 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
     final ok = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('添加班委'),
+        title: const Text('添加职务'),
         content: Padding(
           padding: const EdgeInsets.only(top: 12),
           child: CupertinoTextField(
@@ -118,6 +131,7 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
   @override
   Widget build(BuildContext context) {
     final ctrl = context.read<ClassController>();
+    final studentId = widget.student?.id;
     return Scaffold(
       appBar: PageAppBar(
         title: Text(widget.student == null ? '添加学生' : '编辑学生'),
@@ -167,8 +181,10 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
             decoration: const InputDecoration(labelText: '备注'),
           ),
           const SizedBox(height: 16),
-          Text('班委（可多选）',
-              style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel)),
+          Text(
+            '班级职务（可多选）',
+            style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -195,7 +211,7 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
                 ),
               ActionChip(
                 avatar: Icon(AppIcons.plus, size: 16, color: AppTheme.blue),
-                label: const Text('添加班委'),
+                label: const Text('添加职务'),
                 onPressed: () async {
                   final added = await _promptCustomRole();
                   if (added == null) return;
@@ -211,8 +227,10 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          Text('性别',
-              style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel)),
+          Text(
+            '性别',
+            style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -226,6 +244,78 @@ class _StudentEditScreenState extends State<StudentEditScreen> {
                 ),
             ],
           ),
+          if (studentId != null) ...[
+            const SizedBox(height: 24),
+            Text(
+              '荣誉记录 · ${_honors.length}',
+              style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
+            ),
+            const SizedBox(height: 8),
+            GroupedSection(
+              padding: EdgeInsets.zero,
+              children: [
+                GroupedTile(
+                  title: '添加荣誉',
+                  leading: Icon(AppIcons.plus, color: AppTheme.blue),
+                  onTap: () async {
+                    await showHonorEditor(context, studentId: studentId);
+                    await _loadHonors();
+                  },
+                ),
+                if (_honors.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      '暂无荣誉记录',
+                      style: TextStyle(color: AppTheme.tertiaryLabel),
+                    ),
+                  )
+                else
+                  for (final h in _honors)
+                    GroupedTile(
+                      title: h.title,
+                      subtitle: [
+                        if (h.date.isNotEmpty) h.date,
+                        if (h.level.isNotEmpty) h.level,
+                      ].join(' · '),
+                      onTap: () async {
+                        await showHonorEditor(
+                          context,
+                          studentId: studentId,
+                          existing: h,
+                        );
+                        await _loadHonors();
+                      },
+                      onLongPress: () async {
+                        final ok = await showCupertinoDialog<bool>(
+                          context: context,
+                          builder: (ctx) => CupertinoAlertDialog(
+                            title: const Text('删除荣誉？'),
+                            content: Text(h.title),
+                            actions: [
+                              CupertinoDialogAction(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('取消'),
+                              ),
+                              CupertinoDialogAction(
+                                isDestructiveAction: true,
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('删除'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (ok == true && mounted) {
+                          await context
+                              .read<ClassController>()
+                              .deleteStudentHonor(h.id);
+                          await _loadHonors();
+                        }
+                      },
+                    ),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
           FilledButton(onPressed: _save, child: const Text('保存')),
         ],

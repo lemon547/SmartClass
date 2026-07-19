@@ -21,6 +21,7 @@ abstract final class ClassFeatureIds {
   static const settlements = 'settlements';
   static const semesters = 'semesters';
   static const lessonProgress = 'lessonProgress';
+  static const leave = 'leave';
 }
 
 enum ClassFeatureGroup { teaching, homeroom }
@@ -107,6 +108,14 @@ abstract final class ClassFeatures {
       group: ClassFeatureGroup.teaching,
       defaultHomeroom: true,
       defaultSubject: true,
+    ),
+    ClassFeatureDef(
+      id: ClassFeatureIds.leave,
+      title: '请假管理',
+      group: ClassFeatureGroup.homeroom,
+      defaultHomeroom: true,
+      defaultSubject: false,
+      homeShortcut: true,
     ),
     ClassFeatureDef(
       id: ClassFeatureIds.points,

@@ -96,15 +96,6 @@ def main() -> None:
     out.convert("RGB").save(icon_path, "PNG")
     print(f"Wrote {icon_path}")
 
-    # In-app logo on dark: white cap
-    logo = Image.new("RGBA", (512, 512), (0, 0, 0, 255))
-    ldraw = ImageDraw.Draw(logo)
-    lscale = 512 * 0.52 / 24
-    _draw_cap(ldraw, 256, 256, lscale, (255, 255, 255, 255), max(12, int(512 * 0.028)))
-    logo_path = ICONS / "app_logo.png"
-    logo.save(logo_path, "PNG")
-    print(f"Wrote {logo_path}")
-
 
 if __name__ == "__main__":
     main()

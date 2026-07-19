@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:smart_class/app_info.dart';
-import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 
-/// 透明学士帽 logo（无灰底）
-class AppLogo extends StatelessWidget {
-  const AppLogo({super.key, this.size = 72});
+/// 品牌标：笑脸太阳 GIF（透明底；素材内已留边，避免光芒被裁切）
+class AppBrandMark extends StatelessWidget {
+  const AppBrandMark({super.key, this.size = 120});
 
   final double size;
 
@@ -19,14 +18,10 @@ class AppLogo extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.contain,
+        alignment: Alignment.center,
         filterQuality: FilterQuality.high,
-        color: AppTheme.label,
-        colorBlendMode: BlendMode.srcIn,
-        errorBuilder: (_, __, ___) => Icon(
-          AppIcons.logo,
-          size: size * 0.72,
-          color: AppTheme.label,
-        ),
+        gaplessPlayback: true,
+        excludeFromSemantics: true,
       ),
     );
   }
@@ -41,14 +36,11 @@ class AppBrandHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 2),
-            child: AppLogo(size: 44),
-          ),
+          const AppBrandMark(size: 96),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

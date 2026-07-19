@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smart_class/screens/timetable/widgets/tt_style.dart';
 
-/// 班级课表 / 我的授课 — 底部指示线 Tab，高度 44
+/// 我的课表 / 班级课表 — 底部指示线 Tab
 class ScheduleTabs extends StatelessWidget {
   const ScheduleTabs({
     super.key,
@@ -9,6 +9,7 @@ class ScheduleTabs extends StatelessWidget {
     required this.onChanged,
   });
 
+  /// 0 = 我的课表，1 = 班级课表
   final int index;
   final ValueChanged<int> onChanged;
 
@@ -20,14 +21,14 @@ class ScheduleTabs extends StatelessWidget {
         children: [
           Expanded(
             child: _TabItem(
-              label: '班级课表',
+              label: '我的课表',
               selected: index == 0,
               onTap: () => onChanged(0),
             ),
           ),
           Expanded(
             child: _TabItem(
-              label: '我的授课',
+              label: '班级课表',
               selected: index == 1,
               onTap: () => onChanged(1),
             ),

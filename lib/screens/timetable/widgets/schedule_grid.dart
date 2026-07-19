@@ -16,6 +16,7 @@ class ScheduleGrid extends StatefulWidget {
     required this.showClassOnBlock,
     required this.hasTodo,
     required this.onTap,
+    this.scrollEpoch = 0,
   });
 
   final List<TimetablePeriod> periods;
@@ -31,6 +32,8 @@ class ScheduleGrid extends StatefulWidget {
     int period,
     List<TodayTeachingLesson> lessons,
   ) onTap;
+  /// 变化时重新滚到今天（如点「今天」）
+  final int scrollEpoch;
 
   @override
   State<ScheduleGrid> createState() => _ScheduleGridState();
@@ -56,6 +59,14 @@ class _ScheduleGridState extends State<ScheduleGrid> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant ScheduleGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollEpoch != widget.scrollEpoch) {
+      _didAutoScroll = false;
+    }
+  }
+
   void _syncFrom(ScrollController from, ScrollController to) {
     if (_syncing || !from.hasClients || !to.hasClients) return;
     if ((from.offset - to.offset).abs() < 0.5) return;
@@ -67,7 +78,8 @@ class _ScheduleGridState extends State<ScheduleGrid> {
   void _scrollTodayIntoView(double dayW) {
     if (_didAutoScroll || !_hBody.hasClients) return;
     _didAutoScroll = true;
-    final idx = (widget.todayWeekday - 1).clamp(0, 6);
+    if (widget.todayWeekday < 1 || widget.todayWeekday > 7) return;
+    final idx = widget.todayWeekday - 1;
     final target = (idx * dayW) - dayW * 0.5;
     final max = _hBody.position.maxScrollExtent;
     if (max <= 0) return;
@@ -90,7 +102,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
         return Column(
           children: [
             SizedBox(
-              height: 40,
+              height: 44,
               child: Row(
                 children: [
                   const SizedBox(width: TtStyle.periodW),
@@ -145,11 +157,11 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                                   decoration: const BoxDecoration(
                                     border: Border(
                                       right: BorderSide(
-                                        color: TtStyle.line,
+                                        color: TtStyle.gridLine,
                                         width: 0.5,
                                       ),
                                       bottom: BorderSide(
-                                        color: TtStyle.line,
+                                        color: TtStyle.gridLine,
                                         width: 0.5,
                                       ),
                                     ),
@@ -237,42 +249,28 @@ class _DayHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          label,
+    // 「周三15」同行
+    final text = '$label${date.day}';
+    return Center(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        decoration: BoxDecoration(
+          color: isToday ? TtStyle.accent : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          maxLines: 1,
           style: TextStyle(
             fontSize: 11,
-            color: isToday ? TtStyle.accent : TtStyle.secondary,
-            fontWeight: isToday ? FontWeight.w600 : FontWeight.w400,
+            height: 1.1,
+            fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+            color: isToday ? Colors.white : TtStyle.secondary,
           ),
         ),
-        const SizedBox(height: 2),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (isToday)
-              Container(
-                width: 5,
-                height: 5,
-                margin: const EdgeInsets.only(right: 3),
-                decoration: const BoxDecoration(
-                  color: TtStyle.accent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            Text(
-              '${date.day}',
-              style: TextStyle(
-                fontSize: 12,
-                color: isToday ? TtStyle.accent : TtStyle.muted,
-                fontWeight: isToday ? FontWeight.w700 : FontWeight.w400,
-              ),
-            ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 }
@@ -284,34 +282,21 @@ class _PeriodSide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final range = period.timeRange;
+    final start = range.isEmpty ? '' : range.split('-').first.trim();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '${period.period}',
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              height: 1.1,
-              color: TtStyle.title,
-            ),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Center(
+        child: Text(
+          start.isNotEmpty ? start : '${period.period}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: TtStyle.muted,
           ),
-          const Text(
-            '节',
-            style: TextStyle(fontSize: 10, color: TtStyle.muted, height: 1.1),
-          ),
-          if (range.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              range.split('-').first.trim(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 9, color: TtStyle.muted),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -340,14 +325,14 @@ class _ScheduleCell extends StatelessWidget {
         child: DecoratedBox(
           decoration: const BoxDecoration(
             border: Border(
-              right: BorderSide(color: TtStyle.line, width: 0.5),
-              bottom: BorderSide(color: TtStyle.line, width: 0.5),
+              right: BorderSide(color: TtStyle.gridLine, width: 0.5),
+              bottom: BorderSide(color: TtStyle.gridLine, width: 0.5),
             ),
           ),
           child: !has
               ? const SizedBox.expand()
               : Padding(
-                  padding: const EdgeInsets.all(3),
+                  padding: const EdgeInsets.all(2),
                   child: CourseCard(
                     lessons: lessons,
                     showClass: showClass,

@@ -16,6 +16,7 @@ import 'package:smart_class/screens/points/settlements_screen.dart';
 import 'package:smart_class/screens/reports/weekly_report_screen.dart';
 import 'package:smart_class/screens/rewards/rewards_screen.dart';
 import 'package:smart_class/screens/seating/seating_screen.dart';
+import 'package:smart_class/screens/leave/leave_screen.dart';
 import 'package:smart_class/screens/semesters/semesters_screen.dart';
 import 'package:smart_class/screens/timetable/timetable_screen.dart';
 import 'package:smart_class/screens/tools/fund_screen.dart';
@@ -135,6 +136,16 @@ class ClassHubScreen extends StatelessWidget {
         tint: const Color(0xFF34C759),
         badge: (c) => '${c.profile.seatRows}×${c.profile.seatCols}',
         onTap: (ctx, _, __) => _push(ctx, const SeatingScreen()),
+      ),
+      _HubFeature(
+        id: ClassFeatureIds.leave,
+        title: '请假管理',
+        icon: AppIcons.calendar,
+        tint: const Color(0xFFFF3B30),
+        badge: (c) => c.overdueLeaveCount > 0
+            ? '逾期${c.overdueLeaveCount}'
+            : (c.activeLeaveCount > 0 ? '${c.activeLeaveCount}人' : null),
+        onTap: (ctx, _, __) => _push(ctx, const LeaveScreen()),
       ),
       _HubFeature(
         id: ClassFeatureIds.groups,
