@@ -17,7 +17,9 @@ class AiSettingsScreen extends StatefulWidget {
 
 class _AiSettingsScreenState extends State<AiSettingsScreen> {
   late final TextEditingController _keyCtrl;
+  late final TextEditingController _sttKeyCtrl;
   bool _obscure = true;
+  bool _sttObscure = true;
   bool _busy = false;
 
   @override
@@ -25,17 +27,20 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
     super.initState();
     final ai = context.read<AiSettingsController>();
     _keyCtrl = TextEditingController(text: ai.apiKey);
+    _sttKeyCtrl = TextEditingController(text: ai.sttApiKeyStored);
   }
 
   @override
   void dispose() {
     _keyCtrl.dispose();
+    _sttKeyCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     final ai = context.read<AiSettingsController>();
     await ai.setApiKey(_keyCtrl.text);
+    await ai.setSttApiKey(_sttKeyCtrl.text);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('已保存')),
@@ -195,6 +200,36 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
             keyboardType: TextInputType.visiblePassword,
           ),
           const SizedBox(height: 20),
+          Text(
+            '语音转写 Key（硅基流动）',
+            style: TextStyle(color: AppTheme.tertiaryLabel),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '无谷歌服务的手机（如多数华为）用此 Key 做语音待办转写，国内可免费注册。留空则尝试用上方 DeepSeek Key（通常无效）。',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              color: AppTheme.quaternaryLabel,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _sttKeyCtrl,
+            obscureText: _sttObscure,
+            decoration: InputDecoration(
+              hintText: 'sk-…（siliconflow.cn）',
+              suffixIcon: IconButton(
+                tooltip: _sttObscure ? '显示' : '隐藏',
+                onPressed: () => setState(() => _sttObscure = !_sttObscure),
+                icon: Icon(_sttObscure ? AppIcons.eyeOff : AppIcons.eye),
+              ),
+            ),
+            autocorrect: false,
+            enableSuggestions: false,
+            keyboardType: TextInputType.visiblePassword,
+          ),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
@@ -222,7 +257,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
           const SizedBox(height: 8),
           Text(
             'Key 只保存在本机。推荐档「体验优先」：日常又快又省；难题再点「深度」。\n'
-            '懒羊羊会自动判断：闲聊不塞班级表；问成绩/课表只带相关数据。\n'
+            '助手会自动判断：闲聊不塞班级表；问成绩/课表只带相关数据。\n'
             '150 人班按中等用量，¥100/月通常很宽裕。平台可先充 ¥100，看账单再调。\n'
             '申请与充值：platform.deepseek.com',
             style: TextStyle(

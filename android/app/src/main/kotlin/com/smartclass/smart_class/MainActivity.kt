@@ -535,7 +535,7 @@ class MainActivity : FlutterFragmentActivity() {
             startActivityForResult(intent, REQ_SPEECH)
         } catch (_: ActivityNotFoundException) {
             speechPendingResult = null
-            result.error("unavailable", "设备不支持语音识别，请安装谷歌语音服务", null)
+            result.error("unavailable", "系统无语音识别引擎，请使用 App 内录音转写", null)
         } catch (e: Exception) {
             speechPendingResult = null
             result.error("speech_failed", e.message, null)

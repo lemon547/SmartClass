@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_class/config/local_ai_key.dart';
 import 'package:smart_class/services/deepseek_ai_service.dart';
 
 /// AI 体验档位：在约 ¥100/月预算内尽量好用、少浪费。
@@ -17,6 +18,7 @@ enum AiExperiencePlan {
 class AiSettingsController extends ChangeNotifier {
   AiSettingsController(this._prefs) {
     _apiKey = _prefs.getString(_keyApi) ?? '';
+    _sttApiKey = _prefs.getString(_keySttApi) ?? '';
     _model = _prefs.getString(_keyModel) ?? DeepSeekAiService.modelFlash;
     _thinkingEnabled = _prefs.getBool(_keyThinking) ?? false;
     _deepAnalyze = _prefs.getBool(_keyDeep) ?? false;
@@ -30,6 +32,7 @@ class AiSettingsController extends ChangeNotifier {
   }
 
   static const _keyApi = 'deepseek_api_key';
+  static const _keySttApi = 'siliconflow_stt_api_key';
   static const _keyModel = 'deepseek_model';
   static const _keyThinking = 'deepseek_thinking';
   static const _keyDeep = 'deepseek_deep_analyze';
@@ -38,12 +41,19 @@ class AiSettingsController extends ChangeNotifier {
   final SharedPreferences _prefs;
 
   String _apiKey = '';
+  String _sttApiKey = '';
   String _model = DeepSeekAiService.modelFlash;
   bool _thinkingEnabled = false;
   bool _deepAnalyze = false;
   AiExperiencePlan _plan = AiExperiencePlan.experience100;
 
   String get apiKey => _apiKey;
+  /// 设置页展示/编辑用（不含回退）
+  String get sttApiKeyStored => _sttApiKey;
+  /// 实际转写用：优先硅基流动 Key，未填则回退 DeepSeek Key
+  String get sttApiKey =>
+      _sttApiKey.trim().isNotEmpty ? _sttApiKey.trim() : _apiKey.trim();
+  bool get hasSttApiKey => sttApiKey.isNotEmpty;
   String get model => _model;
   bool get hasApiKey => _apiKey.trim().isNotEmpty;
   bool get thinkingEnabled => _thinkingEnabled;
@@ -70,7 +80,7 @@ class AiSettingsController extends ChangeNotifier {
         AiExperiencePlan.fullPower => '始终 Pro，可开思考；更聪明但更费余额。',
       };
 
-  /// 设置页一句人话说明当前会怎么扣费。
+  /// 设置页：说明当前计费/模型档位（可含技术词）。
   String get runtimeHint {
     final deep = _deepAnalyze;
     return switch (_plan) {
@@ -82,6 +92,12 @@ class AiSettingsController extends ChangeNotifier {
           ? '本轮：Pro + 思考'
           : '本轮：Pro（思考关）',
     };
+  }
+
+  /// 聊天页顶栏：给老师看的状态，不提模型名与价格。
+  String get chatStatusHint {
+    if (_deepAnalyze) return '详细分析已开启 · 回答会更细致';
+    return '可查课表、成绩、积分、考勤与待办';
   }
 
   /// 按档位选模型：体验优先日常 Flash；点「深度」才临时上 Pro+思考。
@@ -121,6 +137,16 @@ class AiSettingsController extends ChangeNotifier {
   Future<void> setApiKey(String value) async {
     _apiKey = value.trim();
     await _prefs.setString(_keyApi, _apiKey);
+    notifyListeners();
+  }
+
+  Future<void> setSttApiKey(String value) async {
+    _sttApiKey = value.trim();
+    if (_sttApiKey.isEmpty) {
+      await _prefs.remove(_keySttApi);
+    } else {
+      await _prefs.setString(_keySttApi, _sttApiKey);
+    }
     notifyListeners();
   }
 
@@ -178,14 +204,25 @@ class AiSettingsController extends ChangeNotifier {
   }
 
   void _seedFromLocalIfNeeded() {
-    if (_apiKey.trim().isNotEmpty) return;
-    // 可用 --dart-define=DEEPSEEK_API_KEY=sk-… 注入；平时在「我的 → AI 助手」填写。
-    // 本地文件 lib/config/local_ai_key.dart 已 gitignore，勿提交 Key。
-    const fromEnv = String.fromEnvironment('DEEPSEEK_API_KEY');
-    final seed = fromEnv.trim();
-    if (seed.isEmpty) return;
-    _apiKey = seed;
-    _prefs.setString(_keyApi, seed);
+    // 可用 --dart-define=… 或 gitignore 的 local_ai_key.dart 注入；勿提交 Key。
+    if (_apiKey.trim().isEmpty) {
+      const fromEnv = String.fromEnvironment('DEEPSEEK_API_KEY');
+      final seed =
+          fromEnv.trim().isNotEmpty ? fromEnv.trim() : kLocalDeepSeekApiKey.trim();
+      if (seed.isNotEmpty) {
+        _apiKey = seed;
+        _prefs.setString(_keyApi, seed);
+      }
+    }
+    // 本地语音 Key 非空时写入（方便 Playwright/本地配好后立刻可用）
+    const sttEnv = String.fromEnvironment('SILICONFLOW_API_KEY');
+    final sttSeed = sttEnv.trim().isNotEmpty
+        ? sttEnv.trim()
+        : kLocalSiliconFlowApiKey.trim();
+    if (sttSeed.isNotEmpty && _sttApiKey.trim() != sttSeed) {
+      _sttApiKey = sttSeed;
+      _prefs.setString(_keySttApi, sttSeed);
+    }
   }
 
   /// 旧版 deepseek-chat → Flash；未设过方案时默认体验优先。

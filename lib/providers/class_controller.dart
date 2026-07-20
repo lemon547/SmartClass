@@ -350,6 +350,40 @@ class ClassController extends ChangeNotifier {
     await load();
   }
 
+  /// AI 只读取数：临时切到指定班加载内存数据，结束后恢复，不打扰界面选班。
+  Future<T> withClassContext<T>(
+    String classId,
+    Future<T> Function() action,
+  ) async {
+    final prev = currentClass?.id;
+    if (prev == classId || classId.isEmpty) {
+      return action();
+    }
+    _suppressAiNotify = true;
+    try {
+      await _repo.setCurrentClassId(classId);
+      examScoresByExam = {};
+      await load();
+      return await action();
+    } finally {
+      if (prev != null && prev.isNotEmpty) {
+        await _repo.setCurrentClassId(prev);
+        examScoresByExam = {};
+        await load();
+      }
+      _suppressAiNotify = false;
+      notifyListeners();
+    }
+  }
+
+  bool _suppressAiNotify = false;
+
+  @override
+  void notifyListeners() {
+    if (_suppressAiNotify) return;
+    super.notifyListeners();
+  }
+
   Future<ManagedClass> createManagedClass({
     required String name,
     String school = '',

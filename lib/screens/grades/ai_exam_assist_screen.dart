@@ -234,7 +234,7 @@ class _AiExamAssistScreenState extends State<AiExamAssistScreen> {
                 children: [
                   CircularProgressIndicator.adaptive(),
                   SizedBox(height: 14),
-                  Text('懒羊羊正在写…'),
+                  Text('正在写…'),
                 ],
               ),
             )

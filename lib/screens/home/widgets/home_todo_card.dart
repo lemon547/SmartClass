@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/ai_settings_controller.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/todos/todos_screen.dart';
 import 'package:smart_class/services/todo_voice_parser.dart';
+import 'package:smart_class/services/voice_stt_service.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
@@ -305,7 +309,7 @@ Future<void> showTodoCreateSheet(BuildContext context) async {
   }
 }
 
-/// 语音创建待办
+/// 语音创建待办（App 内录音 + 国内转写，不依赖谷歌语音）
 Future<void> showVoiceTodoSheet(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -324,46 +328,138 @@ class _VoiceTodoSheet extends StatefulWidget {
 
 class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
   static const _channel = MethodChannel('smart_class/voice_record');
+  static const _autoStopAfter = Duration(seconds: 10);
 
-  var _listening = false;
+  var _recording = false;
   var _busy = false;
   var _error = '';
   var _raw = '';
   var _polished = '';
+  var _seconds = 0;
+  Timer? _ticker;
+  Timer? _autoStop;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _listenOnce());
+    // 点首页麦克风打开后即可说话，无需再点一次
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startRecording());
   }
 
-  Future<void> _listenOnce() async {
-    if (_listening || _busy) return;
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _autoStop?.cancel();
+    if (_recording) {
+      // ignore: discarded_futures
+      _channel.invokeMethod<void>('cancel');
+    }
+    super.dispose();
+  }
+
+  Future<bool> _ensureMic() async {
+    var mic = await Permission.microphone.status;
+    if (!mic.isGranted) {
+      mic = await Permission.microphone.request();
+    }
+    if (!mic.isGranted) {
+      setState(() => _error = '需要麦克风权限才能语音输入');
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _startRecording() async {
+    if (_busy || _recording) return;
+    if (!await _ensureMic()) return;
     setState(() {
-      _listening = true;
+      _error = '';
+      _raw = '';
+      _polished = '';
+      _seconds = 0;
+    });
+    try {
+      await _channel.invokeMethod<String>('start');
+      if (!mounted) return;
+      setState(() => _recording = true);
+      _ticker?.cancel();
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _seconds++);
+      });
+      _autoStop?.cancel();
+      _autoStop = Timer(_autoStopAfter, () {
+        if (mounted && _recording) _stopAndTranscribe();
+      });
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message ?? '无法开始录音');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '无法开始录音：$e');
+    }
+  }
+
+  Future<void> _toggleRecord() async {
+    if (_busy) return;
+    if (_recording) {
+      await _stopAndTranscribe();
+      return;
+    }
+    await _startRecording();
+  }
+
+  Future<void> _stopAndTranscribe() async {
+    _ticker?.cancel();
+    _autoStop?.cancel();
+    if (!_recording) return;
+    setState(() {
+      _recording = false;
+      _busy = true;
       _error = '';
     });
     try {
-      final text = await _channel.invokeMethod<String>('recognizeSpeech');
+      final path = await _channel.invokeMethod<String>('stop');
       if (!mounted) return;
-      final raw = (text ?? '').trim();
+      if (path == null || path.isEmpty) {
+        setState(() {
+          _busy = false;
+          _error = '录音失败，请重试';
+        });
+        return;
+      }
+      final ai = context.read<AiSettingsController>();
+      if (!ai.hasSttApiKey) {
+        setState(() {
+          _busy = false;
+          _error =
+              '请先到「我的 → AI 助手」填写「语音转写 Key」（硅基流动，国内免费，无需谷歌）';
+        });
+        return;
+      }
+      final raw = await VoiceSttService(apiKey: ai.sttApiKey).transcribeFile(path);
+      if (!mounted) return;
       setState(() {
-        _listening = false;
         _raw = raw;
-        if (raw.isEmpty) _error = '未识别到内容，请再试一次';
+        _busy = false;
       });
-      if (raw.isNotEmpty) await _polish(raw);
+      await _polish(raw);
+    } on VoiceSttException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = e.message;
+      });
     } on PlatformException catch (e) {
       if (!mounted) return;
       setState(() {
-        _listening = false;
-        _error = e.message ?? '语音识别失败';
+        _busy = false;
+        _error = e.message ?? '录音失败';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _listening = false;
-        _error = '语音不可用：$e';
+        _busy = false;
+        _error = '识别失败：$e';
       });
     }
   }
@@ -386,6 +482,16 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
     if (mounted) Navigator.pop(context);
   }
 
+  String get _hint {
+    if (_recording) {
+      final left = (_autoStopAfter.inSeconds - _seconds).clamp(0, 99);
+      return '请直接说话 · ${left}s 后自动识别（也可再点结束）';
+    }
+    if (_busy) return '正在转写…';
+    if (_raw.isNotEmpty) return '可点麦克风重录';
+    return '点麦克风开始说话';
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
@@ -397,37 +503,40 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            _listening
-                ? '正在听…'
-                : (_busy ? '整理中…' : '语音待办'),
+            _recording
+                ? '正在录音…'
+                : (_busy ? '识别中…' : '语音待办'),
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 20),
           GestureDetector(
-            onTap: _listening || _busy ? null : _listenOnce,
+            onTap: _busy && !_recording ? null : _toggleRecord,
             child: Container(
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: _listening
-                    ? AppTheme.blue.withValues(alpha: 0.15)
+                color: _recording
+                    ? AppTheme.destructive.withValues(alpha: 0.12)
                     : AppTheme.blue.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: AppTheme.blue.withValues(alpha: 0.4),
-                  width: _listening ? 2.5 : 1,
+                  color: _recording
+                      ? AppTheme.destructive.withValues(alpha: 0.5)
+                      : AppTheme.blue.withValues(alpha: 0.4),
+                  width: _recording ? 2.5 : 1,
                 ),
               ),
               child: Icon(
-                AppIcons.mic,
+                _recording ? AppIcons.close : AppIcons.mic,
                 size: 32,
-                color: AppTheme.blue,
+                color: _recording ? AppTheme.destructive : AppTheme.blue,
               ),
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            _listening ? '请对着系统弹窗说话' : '点麦克风再说一次',
+            _hint,
+            textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
           ),
           if (_error.isNotEmpty) ...[
@@ -487,7 +596,7 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: display.isEmpty || _busy ? null : _save,
+                  onPressed: display.isEmpty || _busy || _recording ? null : _save,
                   child: const Text('创建'),
                 ),
               ),
@@ -498,4 +607,5 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
     );
   }
 }
+
 

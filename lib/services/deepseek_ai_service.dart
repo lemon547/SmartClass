@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:smart_class/services/ai_class_context.dart';
+import 'package:smart_class/theme/mascot_assets.dart';
 
 /// DeepSeek Chat Completions（OpenAI 兼容）。
 class DeepSeekAiService {
@@ -177,10 +178,10 @@ class DeepSeekAiService {
 规则：
 1. 只输出一行 JSON，不要解释、不要 markdown。
 2. 格式：{"packs":["exam_brief","work_logs"],"examId":"..."}
-3. packs 取值只能是目录里的 id；最多 4 个；不需要班级数据时必须输出 {"packs":[]}。
+3. packs 取值只能是目录里的 id；最多 6 个；不需要班级数据时必须输出 {"packs":[]}。
 4. 选了 exam_brief 时必须填目录里的精确 examId；不确定就不要选 exam_brief，改选 grades_overview。
 5. 家长会/班会：优先 exam_brief + work_logs；普通成绩问答用 grades_overview。
-6. 整理/记下待办：选 todos；设计加减分规则：选 points。
+6. 整理/记下待办：选 todos；设计加减分规则：选 points；请假选 leave；座位选 seating；班费选 funds。
 7. 闲聊或与本班无关：{"packs":[]}
 ''';
     final user = '''
@@ -219,7 +220,7 @@ $catalog
       final examId = decoded['examId']?.toString().trim();
       return AiPackSelectResult.ok(
         AiPackSelection(
-          packs: packs.take(4).toList(),
+          packs: packs.take(AiClassContext.maxPacks).toList(),
           examId: (examId == null || examId.isEmpty) ? null : examId,
         ),
       );
@@ -234,6 +235,8 @@ $catalog
     required List<Map<String, String>> history,
     String? classDataSnapshot,
     bool forceClassData = false,
+    String assistantName = MascotAssets.assistantName,
+    String assistantPersona = MascotAssets.assistantPersona,
   }) {
     final useClass = forceClassData ||
         (classDataSnapshot != null &&
@@ -244,9 +247,16 @@ $catalog
         classDataSnapshot: classDataSnapshot ?? '',
         history: history,
         question: question,
+        assistantName: assistantName,
+        assistantPersona: assistantPersona,
       );
     }
-    return askGeneralChat(history: history, question: question);
+    return askGeneralChat(
+      history: history,
+      question: question,
+      assistantName: assistantName,
+      assistantPersona: assistantPersona,
+    );
   }
 
   /// 班主任数据助手：结合本机班级快照回答（会消耗较多 token）。
@@ -254,13 +264,16 @@ $catalog
     required String classDataSnapshot,
     required List<Map<String, String>> history,
     required String question,
+    String assistantName = MascotAssets.assistantName,
+    String assistantPersona = MascotAssets.assistantPersona,
   }) {
     final system = '''
-你是「班主任助手」里的懒羊羊机器人，用亲切、简洁的中文回答班主任的问题。
+你是「Smart Class」里的班级助手「$assistantName」。性格：$assistantPersona。
+用亲切、简洁的中文回答班主任的问题；自称用「$assistantName」或「我」，不要自称其他固定动漫角色名。
 你只能根据下方「本机班级数据快照」作答，不要编造快照中没有的学生、分数或课程。
 若数据不足，明确说缺什么（例如尚未录入某次考试或缺少各科分数）。
 可以做汇总、对比、进步分析、本周课表查询、积分/考勤提醒等。
-一般回答尽量短小好读，必要时用分点；不超过 8 行。
+一般回答尽量短小好读，必要时用 Markdown 分点（标题、加粗、列表均可）；不要用大段代码块包住整篇回复。
 若用户要求生成「家长会/班会」稿，可分点写完整提纲（主题、学情、典型、建议、流程），仍严禁编造快照没有的数据；缺数据处写「待补充」即可。
 
 $_actionProposalInstructions
@@ -281,11 +294,14 @@ $classDataSnapshot
   Future<String> askGeneralChat({
     required List<Map<String, String>> history,
     required String question,
+    String assistantName = MascotAssets.assistantName,
+    String assistantPersona = MascotAssets.assistantPersona,
   }) {
     final system = '''
-你是「班主任助手」里的懒羊羊，用亲切、简洁的中文闲聊或答疑。
+你是「Smart Class」里的班级助手「$assistantName」。性格：$assistantPersona。
+用亲切、简洁的中文闲聊或答疑；自称「$assistantName」或「我」，不要自称其他固定动漫角色名。
 当前看不到本班学生/成绩/课表；若对方在问具体学生数据，请温柔提示可以说「课表/成绩/积分/谁」等关键词，我会自动查本班。
-回答尽量短、好读。
+回答尽量短、好读；可用简单 Markdown（加粗、列表），不要把整段包进代码块。
 
 $_actionProposalInstructions
 ''';

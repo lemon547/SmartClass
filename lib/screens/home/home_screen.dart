@@ -19,6 +19,7 @@ import 'package:smart_class/screens/tools/countdown_screen.dart';
 import 'package:smart_class/screens/work_logs/work_logs_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
+import 'package:smart_class/theme/mascot_assets.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/paddi_mascot.dart';
 
@@ -662,8 +663,6 @@ class _AiAssistantCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mascot = context.watch<ThemeController>().fabMascotAsset;
-
     return _HomeCard(
       child: InkWell(
         onTap: () => Navigator.of(context).push(
@@ -675,7 +674,7 @@ class _AiAssistantCard extends StatelessWidget {
           child: Row(
             children: [
               Image.asset(
-                mascot,
+                MascotAssets.fab,
                 width: 52,
                 height: 52,
                 fit: BoxFit.contain,
@@ -696,7 +695,7 @@ class _AiAssistantCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'AI 助教',
+                      MascotAssets.assistantTitle,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,

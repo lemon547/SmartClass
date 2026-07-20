@@ -36,6 +36,7 @@ dependencies:
   http: ^1.6.0
   # 本地免费 OCR（Google ML Kit），图片导入先抽文字再给 AI
   google_mlkit_text_recognition: ^0.15.0
+  flutter_markdown: ^0.7.7+1
 dev_dependencies:
   flutter_test:
     sdk: flutter

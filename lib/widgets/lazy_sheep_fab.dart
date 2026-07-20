@@ -331,7 +331,7 @@ class _PetSlot extends StatelessWidget {
       fit: BoxFit.contain,
       gaplessPlayback: true,
       errorBuilder: (_, __, ___) => Image.asset(
-        MascotAssets.fabHug,
+        MascotAssets.fab,
         width: animSize,
         height: animSize,
         fit: BoxFit.contain,
