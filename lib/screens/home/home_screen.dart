@@ -6,20 +6,17 @@ import 'package:smart_class/features/class_features.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/providers/theme_controller.dart';
-import 'package:smart_class/screens/assistant/ai_assistant_chat_screen.dart';
 import 'package:smart_class/screens/attendance/attendance_screen.dart';
 import 'package:smart_class/screens/grades/grades_screen.dart';
 import 'package:smart_class/screens/home/widgets/home_todo_card.dart';
 import 'package:smart_class/screens/leave/leave_screen.dart';
 import 'package:smart_class/screens/points/quick_points_screen.dart';
-import 'package:smart_class/screens/roll_call/roll_call_screen.dart';
 import 'package:smart_class/screens/students/students_screen.dart';
 import 'package:smart_class/screens/timetable/teacher_timetable_screen.dart';
 import 'package:smart_class/screens/tools/countdown_screen.dart';
 import 'package:smart_class/screens/work_logs/work_logs_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
-import 'package:smart_class/theme/mascot_assets.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/paddi_mascot.dart';
 
@@ -111,8 +108,6 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: _sectionGap),
-            const _AiAssistantCard(),
             const SizedBox(height: _sectionGap),
             _HomeShortcuts(ctrl: ctrl),
             if (ctrl.students.isEmpty ||
@@ -504,14 +499,17 @@ class _ScheduleCardState extends State<_ScheduleCard> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
-                TextButton(
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+                IconButton(
+                  tooltip: '完整课表',
                   onPressed: _openTimetable,
-                  child: const Text('完整课表', style: TextStyle(fontSize: 13)),
+                  icon: Icon(
+                    AppIcons.chevronRight,
+                    size: 18,
+                    color: AppTheme.tertiaryLabel,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 ),
               ],
             ),
@@ -658,70 +656,6 @@ class _LessonRow extends StatelessWidget {
 }
 
 
-class _AiAssistantCard extends StatelessWidget {
-  const _AiAssistantCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return _HomeCard(
-      child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AiAssistantChatScreen()),
-        ),
-        borderRadius: BorderRadius.circular(_cardRadius),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
-          child: Row(
-            children: [
-              Image.asset(
-                MascotAssets.fab,
-                width: 52,
-                height: 52,
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppTheme.blue.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(AppIcons.sparkles, color: AppTheme.blue, size: 20),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      MascotAssets.assistantTitle,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.label,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '今日提醒 · 作业分析 · 家校沟通',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppTheme.tertiaryLabel,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(AppIcons.chevronRight, color: AppTheme.tertiaryLabel, size: 18),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _HomeShortcuts extends StatelessWidget {
   const _HomeShortcuts({required this.ctrl});
   final ClassController ctrl;
@@ -736,14 +670,6 @@ class _HomeShortcuts extends StatelessWidget {
           MaterialPageRoute(builder: (_) => const StudentsScreen()),
         ),
       ),
-      if (ctrl.isFeatureVisible(ClassFeatureIds.rollCall))
-        (
-          icon: AppIcons.dices,
-          label: '点名',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const RollCallScreen()),
-          ),
-        ),
       if (ctrl.isFeatureVisible(ClassFeatureIds.attendance))
         (
           icon: AppIcons.attendance,

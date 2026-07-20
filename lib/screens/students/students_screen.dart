@@ -42,6 +42,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
     final ctrl = context.watch<ClassController>();
     final list = ctrl.searchStudents(_query);
     final title = ctrl.currentClass?.displayTitle ?? '本班';
+    final canPop = Navigator.canPop(context);
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -50,10 +51,15 @@ class _StudentsScreenState extends State<StudentsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (canPop)
+                    IconButton(
+                      tooltip: '返回',
+                      icon: const Icon(AppIcons.chevronLeft),
+                      onPressed: () => Navigator.maybePop(context),
+                    ),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,13 +67,12 @@ class _StudentsScreenState extends State<StudentsScreen> {
                         const Text(
                           '学生档案',
                           style: TextStyle(
-                            fontSize: 34,
+                            fontSize: 22,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
-                            height: 1.1,
+                            letterSpacing: -0.3,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
                           '${ctrl.students.length} 人 · $title',
                           style: TextStyle(

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:smart_class/widgets/app_toast.dart';
 
 /// 手机端导出：调起系统「另存为」，由用户选择保存位置（Android SAF）。
 abstract final class FileExport {
@@ -59,15 +60,11 @@ abstract final class FileExport {
 
   static void showSavedSnackBar(BuildContext context, String? savedPath) {
     if (!context.mounted || savedPath == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已保存：${p.basename(savedPath)}')),
-    );
+    AppToast.success(context, '已保存：${p.basename(savedPath)}');
   }
 
   static void showErrorSnackBar(BuildContext context, Object error) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('保存失败：$error')),
-    );
+    AppToast.error(context, '保存失败：$error');
   }
 }

@@ -60,6 +60,14 @@ class VoiceSttService {
     if (text.isEmpty) {
       throw const VoiceSttException('未识别到内容，请再说一次');
     }
+    // 仅标点/空白：按未识别处理（静音时常出现）
+    final core = text.replaceAll(
+      RegExp(r'[\s.,，。、！？!?;；:：…·\-—_~～"“”‘’（）()【】\[\]<>《》]+'),
+      '',
+    );
+    if (core.isEmpty) {
+      throw const VoiceSttException('未识别到内容，请再说一次');
+    }
     return text;
   }
 

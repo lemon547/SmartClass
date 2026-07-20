@@ -162,21 +162,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
             ),
             const SizedBox(height: 8),
           ],
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('本轮深度分析'),
-            subtitle: Text(
-              ai.plan == AiExperiencePlan.experience100
-                  ? '打开后临时用满血 Pro+思考，难题更准；日常请关，省下预算给常用。'
-                  : '打开后会「思考」再答，更准但更费。日常建议关。',
-              style: TextStyle(fontSize: 12, color: AppTheme.tertiaryLabel),
-            ),
-            value: ai.deepAnalyze,
-            onChanged: _busy
-                ? null
-                : (v) => context.read<AiSettingsController>().setDeepAnalyze(v),
-          ),
-          const SizedBox(height: 8),
           Text(
             '${ai.runtimeHint}\n配置模型名（档位会覆盖实际调用）：${ai.model}',
             style: TextStyle(fontSize: 12, color: AppTheme.tertiaryLabel),

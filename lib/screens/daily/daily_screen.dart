@@ -3,11 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:smart_class/providers/class_controller.dart';
-import 'package:smart_class/screens/classes/class_hub_screen.dart';
-import 'package:smart_class/screens/more/more_screen.dart';
 import 'package:smart_class/screens/points/quick_points_screen.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/app_toast.dart';
 import 'package:smart_class/widgets/class_switcher_sheet.dart';
 
 /// 班级日常：请假 / 违纪 / 加扣分 / 规则提醒
@@ -30,46 +29,25 @@ class DailyScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
-            Row(
+            const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '班级',
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                          height: 1.1,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '请假、违纪、量化积分自动关联学生档案',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF8E8E93),
-                        ),
-                      ),
-                    ],
+                Text(
+                  '班级',
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    height: 1.1,
                   ),
                 ),
-                IconButton(
-                  tooltip: '班级设置',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const ClassHubScreen()),
+                SizedBox(height: 4),
+                Text(
+                  '请假、违纪、量化积分自动关联学生档案',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF8E8E93),
                   ),
-                  icon: Icon(Icons.grid_view_rounded, color: AppTheme.secondaryLabel),
-                ),
-                IconButton(
-                  tooltip: '我的',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const MoreScreen()),
-                  ),
-                  icon: Icon(Icons.person_outline, color: AppTheme.secondaryLabel),
                 ),
               ],
             ),
@@ -165,45 +143,6 @@ class DailyScreen extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Container(
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
-                    child: Text(
-                      '规则设置',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  SwitchListTile.adaptive(
-                    contentPadding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
-                    title: const Text(
-                      '累计扣分提醒',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    subtitle: Text(
-                      '累计扣分 ≥ ${ctrl.deductionReminderThreshold}：提醒老师跟进处理',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.tertiaryLabel,
-                      ),
-                    ),
-                    value: ctrl.deductionReminderEnabled,
-                    activeTrackColor: const Color(0xFF34C759),
-                    onChanged: (v) => ctrl.setDeductionReminder(enabled: v),
-                  ),
-                ],
-              ),
-            ),
             if (ctrl.leaveRecords.isNotEmpty ||
                 ctrl.disciplineRecords.isNotEmpty) ...[
               const SizedBox(height: 16),
@@ -291,9 +230,7 @@ class DailyScreen extends StatelessWidget {
             onPressed: () {
               final n = int.tryParse(input.text.trim());
               if (n == null || n < 1) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('请输入有效的阈值（至少 1）')),
-                );
+                AppToast.error(ctx, '请输入有效的阈值（至少 1）');
                 return;
               }
               Navigator.pop(ctx, n.clamp(1, 999));
@@ -310,14 +247,10 @@ class DailyScreen extends StatelessWidget {
     try {
       await ctrl.setDeductionReminder(threshold: saved);
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已设置扣分阈值：$saved')),
-      );
+      AppToast.success(context, '已设置扣分阈值：$saved');
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败：$e')),
-      );
+      AppToast.error(context, '保存失败：$e');
     }
   }
 }
@@ -505,9 +438,7 @@ class _LeaveFormScreenState extends State<_LeaveFormScreen> {
   Future<void> _save() async {
     final id = _studentId;
     if (id == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择学生')),
-      );
+      AppToast.error(context, '请选择学生');
       return;
     }
     setState(() => _saving = true);
@@ -518,10 +449,9 @@ class _LeaveFormScreenState extends State<_LeaveFormScreen> {
           pickup: _pickup.text,
         );
     if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已记请假')),
-    );
+    AppToast.successOn(messenger, '已记请假');
   }
 
   @override
@@ -632,15 +562,11 @@ class _DisciplineFormScreenState extends State<_DisciplineFormScreen> {
   Future<void> _save() async {
     final id = _studentId;
     if (id == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择学生')),
-      );
+      AppToast.error(context, '请选择学生');
       return;
     }
     if (_title.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写违纪事由')),
-      );
+      AppToast.error(context, '请填写违纪事由');
       return;
     }
     setState(() => _saving = true);
@@ -652,10 +578,9 @@ class _DisciplineFormScreenState extends State<_DisciplineFormScreen> {
           pointsDelta: _points,
         );
     if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已记违纪')),
-    );
+    AppToast.successOn(messenger, '已记违纪');
   }
 
   @override

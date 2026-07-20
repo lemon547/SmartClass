@@ -1,30 +1,21 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:excel/excel.dart' as xls;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
-import 'package:smart_class/screens/lessons/lesson_progress_screen.dart';
 import 'package:smart_class/screens/timetable/ai_timetable_import_screen.dart';
 import 'package:smart_class/screens/timetable/timetable_periods_screen.dart';
 import 'package:smart_class/screens/timetable/widgets/my_teaching_summary.dart';
 import 'package:smart_class/screens/timetable/widgets/schedule_grid.dart';
-import 'package:smart_class/screens/timetable/widgets/schedule_header.dart';
 import 'package:smart_class/screens/timetable/widgets/schedule_tabs.dart';
 import 'package:smart_class/screens/timetable/widgets/today_lesson_list.dart';
 import 'package:smart_class/screens/timetable/widgets/tt_style.dart';
-import 'package:smart_class/services/file_share.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 import 'package:smart_class/widgets/class_switcher_sheet.dart';
+
+enum _LessonDetailAction { edit, add }
 
 /// 课表中心（归属「教学」）：
 /// - 我的课表：汇总各班本人要上的课（默认）
@@ -39,7 +30,7 @@ class TeacherTimetableScreen extends StatefulWidget {
   /// 0 = 我的课表，1 = 班级课表
   final int initialTab;
 
-  /// 嵌在「教学」Tab 内时隐藏外层 AppBar
+  /// 嵌在其他页面内时隐藏外层 AppBar（教学 Tab 为入口页，一般 push 打开）
   final bool embedded;
 
   @override
@@ -49,8 +40,6 @@ class TeacherTimetableScreen extends StatefulWidget {
 class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
   static const _weekLabels = ['一', '二', '三', '四', '五', '六', '日'];
   static const _weekFull = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-  static const _notesPrefsKey = 'timetable_cell_notes_v1';
-  static const _todosPrefsKey = 'timetable_cell_todos_v1';
   static const _subjectPresets = [
     '语文',
     '数学',
@@ -69,14 +58,9 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
 
   late int _tab;
   bool _aggregateAll = true;
-  /// 我的授课：false=今日列表，true=周网格
-  bool _weekMode = false;
-  /// 相对本周的偏移：0=本周，-1=上周，1=下周
-  int _weekOffset = 0;
+  /// 班级课表：仅显示本人授课科目
+  bool _classMineOnly = false;
   int _scrollEpoch = 0;
-  String? _classSubjectFilter;
-  final Map<String, String> _notes = {};
-  final Set<String> _todos = {};
   final ScrollController _gridScroll = ScrollController();
   bool _canScrollMore = false;
 
@@ -85,7 +69,6 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
     super.initState();
     _tab = widget.initialTab.clamp(0, 1);
     _gridScroll.addListener(_onGridScroll);
-    _loadMarks();
   }
 
   @override
@@ -103,40 +86,6 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
       setState(() => _canScrollMore = more);
     }
   }
-
-  Future<void> _loadMarks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final notesRaw = prefs.getString(_notesPrefsKey);
-    final todosRaw = prefs.getStringList(_todosPrefsKey) ?? const [];
-    if (!mounted) return;
-    setState(() {
-      _notes.clear();
-      if (notesRaw != null && notesRaw.isNotEmpty) {
-        final map = jsonDecode(notesRaw);
-        if (map is Map) {
-          for (final e in map.entries) {
-            final v = '${e.value}'.trim();
-            if (v.isNotEmpty) _notes['${e.key}'] = v;
-          }
-        }
-      }
-      _todos.clear();
-      _todos.addAll(todosRaw);
-    });
-  }
-
-  Future<void> _persistMarks() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_notesPrefsKey, jsonEncode(_notes));
-    await prefs.setStringList(_todosPrefsKey, _todos.toList());
-  }
-
-  String _markKey({
-    required String classId,
-    required int weekday,
-    required int period,
-  }) =>
-      '$classId|$weekday|$period';
 
   /// 我的授课：用默认节次骨架，覆盖到实际最大节次
   List<TimetablePeriod> _periodsForMyView(List<TodayTeachingLesson> lessons) {
@@ -159,9 +108,13 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
     var lessons =
         isClassTab ? [...ctrl.weekClassLessons] : [...ctrl.weekMyLessons];
     if (isClassTab) {
-      final filter = _classSubjectFilter?.trim();
-      if (filter != null && filter.isNotEmpty) {
-        lessons = lessons.where((l) => l.subject.trim() == filter).toList();
+      if (_classMineOnly) {
+        final mine = ctrl.teachingSubject?.trim();
+        if (mine != null && mine.isNotEmpty) {
+          lessons = lessons.where((l) => l.subject.trim() == mine).toList();
+        } else {
+          lessons = [];
+        }
       }
     } else if (!_aggregateAll) {
       final id = ctrl.currentClass?.id;
@@ -170,19 +123,6 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
       }
     }
     return lessons;
-  }
-
-  List<String> _subjectsInLessons(List<TodayTeachingLesson> lessons) {
-    final seen = <String>{};
-    final out = <String>[];
-    for (final l in lessons) {
-      final s = l.subject.trim();
-      if (s.isEmpty || seen.contains(s)) continue;
-      seen.add(s);
-      out.add(s);
-    }
-    out.sort();
-    return out;
   }
 
   @override
@@ -197,21 +137,12 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
             : ctrl.timetablePeriods)
         : _periodsForMyView(lessons);
     final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
     final todayWd = today.weekday;
-    final thisWeekStart = today.subtract(Duration(days: todayWd - 1));
-    final weekStart = thisWeekStart.add(Duration(days: 7 * _weekOffset));
-    final weekEnd = weekStart.add(const Duration(days: 6));
-    final range =
-        '${DateFormat('M月d日').format(weekStart)}－${DateFormat('M月d日').format(weekEnd)}';
-    // 仅在查看本周时高亮「今天」列
-    final highlightWeekday = _weekOffset == 0 ? todayWd : -1;
-    final filterSubjects = _subjectsInLessons(ctrl.weekClassLessons);
-                final subjectOptions = [
-      if (ctrl.teachingSubject != null &&
-          !_subjectPresets.contains(ctrl.teachingSubject))
-        ctrl.teachingSubject!,
-      ..._subjectPresets,
-    ];
+    final thisWeekStart = todayDate.subtract(Duration(days: todayWd - 1));
+    final weekStart = thisWeekStart;
+    final highlightWeekday = todayWd;
+    final todayLabel = '${today.month}月${today.day}日';
     final todayLessons =
         lessons.where((l) => l.weekday == todayWd).toList();
 
@@ -220,21 +151,13 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
       grid.putIfAbsent('${l.weekday}-${l.period}', () => []).add(l);
     }
 
-    final showTodayList = !isClassTab && !_weekMode;
-
     final moreBtn = IconButton(
       tooltip: '更多',
       icon: const Icon(AppIcons.moreVert, color: TtStyle.accent),
       constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       onPressed: () => _showMoreActions(
         context,
-        ctrl: ctrl,
         isClassTab: isClassTab,
-        classTitle: classTitle,
-        lessons: lessons,
-        periods: periods,
-        weekStart: weekStart,
-        range: range,
       ),
     );
 
@@ -246,6 +169,11 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
               toolbarHeight: TtStyle.toolbarH,
               centerTitle: true,
               automaticallyImplyLeading: false,
+              // 与 Scaffold 白底一致，避免顶栏灰、内容白两截色
+              backgroundColor: TtStyle.pageBg,
+              surfaceTintColor: Colors.transparent,
+              foregroundColor: TtStyle.accent,
+              iconTheme: const IconThemeData(color: TtStyle.accent, size: 22),
               leadingWidth: 56,
               leading: Navigator.canPop(context)
                   ? IconButton(
@@ -279,60 +207,20 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
                     Expanded(
                       child: ScheduleTabs(
                         index: _tab,
-                        onChanged: (i) => setState(() {
-                          _tab = i;
-                          if (i == 0) _weekMode = false;
-                        }),
+                        onChanged: (i) => setState(() => _tab = i),
                       ),
                     ),
                     if (widget.embedded) moreBtn,
                   ],
                 ),
-                ScheduleHeader(
-                  rangeLabel: range,
-                  showJumpToday: _weekOffset != 0 || (!isClassTab && _weekMode),
-                  onPrevWeek: () => setState(() {
-                    _weekOffset--;
-                    if (!isClassTab) _weekMode = true;
-                    _scrollEpoch++;
-                  }),
-                  onNextWeek: () => setState(() {
-                    _weekOffset++;
-                    if (!isClassTab) _weekMode = true;
-                    _scrollEpoch++;
-                  }),
-                  onJumpToday: () {
-                    setState(() {
-                      _weekOffset = 0;
-                      if (!isClassTab) _weekMode = false;
-                      _scrollEpoch++;
-                    });
-                  },
-                ),
-                if (isClassTab) ...[
+                if (isClassTab)
                   ClassScheduleBar(
                     title: classTitle,
-                    subjects: filterSubjects,
-                    filterSubject: _classSubjectFilter,
+                    mineOnly: _classMineOnly,
                     onSwitchClass: () => showClassSwitcherSheet(context),
-                    onFilterChanged: (v) =>
-                        setState(() => _classSubjectFilter = v),
+                    onMineOnlyChanged: (v) =>
+                        setState(() => _classMineOnly = v),
                   ),
-                ] else ...[
-                  MyTeachingSummary(
-                    subject: ctrl.teachingSubject,
-                    lessonCount: lessons.length,
-                    aggregateAll: _aggregateAll,
-                    subjectOptions: subjectOptions,
-                    onSelectSubject: (s) async {
-                      await ctrl.setTeachingSubject(s);
-                      await ctrl.refreshAllTodayLessons();
-                    },
-                    onEditSubject: () => _editTeachingSubject(context, ctrl),
-                    onToggleAggregate: (v) =>
-                        setState(() => _aggregateAll = v),
-                  ),
-                ],
               ],
             ),
           ),
@@ -353,33 +241,19 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
                         actionLabel: '设置科目',
                         onAction: () => _editTeachingSubject(context, ctrl),
                       )
-                    : showTodayList
-                        ? TodayLessonList(
-                            lessons: todayLessons,
-                            today: today,
-                            onTapLesson: (lesson) {
-                              _showLessonDetail(
-                                context,
-                                ctrl,
-                                weekday: lesson.weekday,
-                                period: lesson.period,
-                                cellLessons: [lesson],
-                                isClassTab: false,
-                              );
-                            },
+                    : !isClassTab
+                        ? _buildMyDayAndWeek(
+                            ctrl: ctrl,
+                            todayLessons: todayLessons,
+                            todayLabel: todayLabel,
+                            weekLessons: lessons,
+                            weekStart: thisWeekStart,
+                            todayWeekday: todayWd,
                           )
-                        : !isClassTab && lessons.isEmpty
+                        : lessons.isEmpty
                             ? _HintEmpty(
                                 title: '本周暂无课程安排',
-                                subtitle: _aggregateAll
-                                    ? '可在「班级课表」排课，或点右上角 ⋮ 添加。'
-                                    : '当前班本周无该科目，可展开上方筛选切换「全部班级」。',
-                                actionLabel: '回到今天',
-                                onAction: () => setState(() {
-                                  _weekOffset = 0;
-                                  _weekMode = false;
-                                  _scrollEpoch++;
-                                }),
+                                subtitle: '可点右上角 ⋮ 添加，或先在班级课表排课。',
                               )
                             : NotificationListener<ScrollMetricsNotification>(
                                 onNotification: (n) {
@@ -417,19 +291,8 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
                                         scrollEpoch: _scrollEpoch,
                                         lessonsAt: (wd, p) =>
                                             grid['$wd-$p'] ?? const [],
-                                        showClassOnBlock: !isClassTab,
-                                        hasTodo: (cell) => cell.any(
-                                          (l) => _todos.contains(
-                                            _markKey(
-                                              classId: l.classId.isEmpty
-                                                  ? (ctrl.currentClass?.id ??
-                                                      '')
-                                                  : l.classId,
-                                              weekday: l.weekday,
-                                              period: l.period,
-                                            ),
-                                          ),
-                                        ),
+                                        showClassOnBlock: false,
+                                        hasTodo: (_) => false,
                                         onTap: (wd, p, cellLessons) {
                                           _showLessonDetail(
                                             context,
@@ -437,7 +300,7 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
                                             weekday: wd,
                                             period: p,
                                             cellLessons: cellLessons,
-                                            isClassTab: isClassTab,
+                                            isClassTab: true,
                                           );
                                         },
                                       ),
@@ -458,15 +321,36 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
     );
   }
 
+  Widget _buildMyDayAndWeek({
+    required ClassController ctrl,
+    required List<TodayTeachingLesson> todayLessons,
+    required String todayLabel,
+    required List<TodayTeachingLesson> weekLessons,
+    required DateTime weekStart,
+    required int todayWeekday,
+  }) {
+    return MyScheduleList(
+      todayLessons: todayLessons,
+      todayLabel: todayLabel,
+      weekLessons: weekLessons,
+      weekStart: weekStart,
+      todayWeekday: todayWeekday,
+      onTapLesson: (lesson) {
+        _showLessonDetail(
+          context,
+          ctrl,
+          weekday: lesson.weekday,
+          period: lesson.period,
+          cellLessons: [lesson],
+          isClassTab: false,
+        );
+      },
+    );
+  }
+
   Future<void> _showMoreActions(
     BuildContext context, {
-    required ClassController ctrl,
     required bool isClassTab,
-    required String classTitle,
-    required List<TodayTeachingLesson> lessons,
-    required List<TimetablePeriod> periods,
-    required DateTime weekStart,
-    required String range,
   }) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -477,21 +361,14 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(AppIcons.share, color: TtStyle.accent),
-                title: const Text('分享课表'),
-                subtitle: const Text('导出本周课表并分享'),
+                leading: const Icon(AppIcons.sparkles, color: TtStyle.accent),
+                title: const Text('AI智能导入课表'),
+                subtitle: const Text('微信/本机文件或照片，OCR+AI'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  _showExportActions(
+                  AiTimetableImportScreen.push(
                     context,
                     markAsMine: !isClassTab,
-                    lessons: lessons,
-                    periods: periods,
-                    weekStart: weekStart,
-                    range: range,
-                    title: isClassTab
-                        ? '$classTitle · 班级课表'
-                        : '我的课表 · ${ctrl.teachingSubject ?? '未设科目'}',
                   );
                 },
               ),
@@ -502,19 +379,6 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
                 onTap: () {
                   Navigator.pop(ctx);
                   _openManualAdd(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(AppIcons.notebook, color: TtStyle.accent),
-                title: const Text('备课'),
-                subtitle: const Text('授课进度与课件'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const LessonProgressScreen(),
-                    ),
-                  );
                 },
               ),
               if (isClassTab)
@@ -553,198 +417,116 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
     }
 
     final existing = cellLessons.isEmpty ? null : cellLessons.first;
-    final classId = existing?.classId.isNotEmpty == true
-        ? existing!.classId
-        : (ctrl.currentClass?.id ?? '');
-    final key = _markKey(classId: classId, weekday: weekday, period: period);
-    final noteCtrl = TextEditingController(text: _notes[key] ?? '');
-    var hasTodo = _todos.contains(key);
 
-    await showModalBottomSheet<void>(
+    // 先关弹层再开下一页，避免叠层触发 InheritedWidget 断言
+    final action = await showDialog<_LessonDetailAction>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheet) {
-            final periodLabel =
-                ctrl.periodAt(period)?.displayLabel ?? '第$period节';
-            final time = existing?.timeRange.isNotEmpty == true
-                ? existing!.timeRange
-                : (ctrl.periodAt(period)?.timeRange ?? '');
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 4,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    existing?.subject ?? '空闲时段',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: TtStyle.courseFg,
-                    ),
+        final periodLabel =
+            ctrl.periodAt(period)?.displayLabel ?? '第$period节';
+        final time = existing?.timeRange.isNotEmpty == true
+            ? existing!.timeRange
+            : (ctrl.periodAt(period)?.timeRange ?? '');
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 36, vertical: 24),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  existing?.subject ?? '空闲时段',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: TtStyle.title,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '周${_weekLabels[weekday - 1]} · $periodLabel'
-                    '${time.isEmpty ? '' : ' · $time'}',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: TtStyle.secondary,
-                    ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '周${_weekLabels[weekday - 1]} · $periodLabel'
+                  '${time.isEmpty ? '' : ' · $time'}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: TtStyle.secondary,
                   ),
-                  const SizedBox(height: 8),
-                  if (cellLessons.isEmpty)
+                ),
+                const SizedBox(height: 12),
+                if (cellLessons.isEmpty)
+                  Text(
+                    ctrl.currentClass?.displayTitle ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: TtStyle.title,
+                    ),
+                  )
+                else
+                  for (final l in cellLessons) ...[
                     Text(
-                      ctrl.currentClass?.displayTitle ?? '',
+                      l.classTitle.isEmpty ? '—' : l.classTitle,
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
                         color: TtStyle.title,
                       ),
-                    )
-                  else
-                    for (final l in cellLessons) ...[
+                    ),
+                    if (l.location.trim().isNotEmpty)
                       Text(
-                        l.classTitle.isEmpty ? '—' : l.classTitle,
+                        l.location.trim(),
+                        textAlign: TextAlign.center,
                         style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: TtStyle.title,
+                          fontSize: 13,
+                          color: TtStyle.muted,
                         ),
                       ),
-                      if (l.location.trim().isNotEmpty)
-                        Text(
-                          l.location.trim(),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: TtStyle.muted,
-                          ),
-                        ),
-                      const SizedBox(height: 2),
-                    ],
+                    const SizedBox(height: 2),
+                  ],
+                if (isClassTab) ...[
+                  const SizedBox(height: 16),
+                  FilledButton.tonal(
+                    onPressed: () =>
+                        Navigator.pop(ctx, _LessonDetailAction.edit),
+                    child: Text(existing == null ? '安排课程' : '调整课程'),
+                  ),
+                ] else if (cellLessons.isEmpty) ...[
+                  const SizedBox(height: 16),
+                  FilledButton.tonal(
+                    onPressed: () =>
+                        Navigator.pop(ctx, _LessonDetailAction.add),
+                    child: const Text('添加课程'),
+                  ),
+                ] else ...[
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: noteCtrl,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      hintText: '添加备注 / 待办说明',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('关闭'),
                   ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: const Text('待办红点标记', style: TextStyle(fontSize: 14)),
-                    value: hasTodo,
-                    activeThumbColor: TtStyle.todoDot,
-                    onChanged: (v) => setSheet(() => hasTodo = v),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const LessonProgressScreen(),
-                              ),
-                            );
-                          },
-                          child: const Text('查看详情'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () async {
-                            final note = noteCtrl.text.trim();
-                            setState(() {
-                              if (note.isEmpty) {
-                                _notes.remove(key);
-                              } else {
-                                _notes[key] = note;
-                              }
-                              if (hasTodo) {
-                                _todos.add(key);
-                              } else {
-                                _todos.remove(key);
-                              }
-                            });
-                            await _persistMarks();
-                            if (ctx.mounted) Navigator.pop(ctx);
-                          },
-                          child: const Text('保存备注'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (isClassTab)
-                    FilledButton.tonal(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _editClassCell(
-                          context,
-                          ctrl,
-                          weekday,
-                          period,
-                          existing,
-                        );
-                      },
-                      child: Text(existing == null ? '安排课程' : '调整课程'),
-                    )
-                  else if (cellLessons.isNotEmpty)
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFFF3B30),
-                      ),
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        for (final l in cellLessons) {
-                          await ctrl.clearMyTeachingLesson(
-                            classId: l.classId,
-                            weekday: l.weekday,
-                            period: l.period,
-                          );
-                        }
-                      },
-                      child: Text(
-                        cellLessons.length > 1
-                            ? '从我的授课中清除本格全部'
-                            : '从我的授课中清除',
-                      ),
-                    )
-                  else
-                    FilledButton.tonal(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        _openManualAdd(
-                          context,
-                          weekday: weekday,
-                          period: period,
-                        );
-                      },
-                      child: const Text('添加课程'),
-                    ),
                 ],
-              ),
-            );
-          },
+              ],
+            ),
+          ),
         );
       },
     );
+
+    if (!mounted) return;
+    switch (action) {
+      case _LessonDetailAction.edit:
+        await _editClassCell(this.context, ctrl, weekday, period, existing);
+      case _LessonDetailAction.add:
+        await _openManualAdd(this.context, weekday: weekday, period: period);
+      case null:
+        break;
+    }
   }
 
   Future<void> _editTeachingSubject(
@@ -844,7 +626,7 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
       '自习',
     }.toList();
 
-    await showModalBottomSheet<void>(
+    final saved = await showModalBottomSheet<String?>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -895,30 +677,13 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () async {
-                  final v = text.text.trim();
-                  Navigator.pop(ctx);
-                  await ctrl.setTimetableSlot(
-                    weekday: weekday,
-                    period: period,
-                    subject: v.isEmpty ? null : v,
-                  );
-                  await ctrl.refreshAllTodayLessons();
-                },
+                onPressed: () => Navigator.pop(ctx, text.text.trim()),
                 child: const Text('保存'),
               ),
               if (existing != null) ...[
                 const SizedBox(height: 8),
                 TextButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await ctrl.setTimetableSlot(
-                      weekday: weekday,
-                      period: period,
-                      subject: null,
-                    );
-                    await ctrl.refreshAllTodayLessons();
-                  },
+                  onPressed: () => Navigator.pop(ctx, ''),
                   child: const Text('清除本格'),
                 ),
               ],
@@ -927,6 +692,14 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
         );
       },
     );
+    text.dispose();
+    if (!mounted || saved == null) return;
+    await ctrl.setTimetableSlot(
+      weekday: weekday,
+      period: period,
+      subject: saved.isEmpty ? null : saved,
+    );
+    await ctrl.refreshAllTodayLessons();
   }
 
   Future<void> _openManualAdd(
@@ -942,202 +715,6 @@ class _TeacherTimetableScreenState extends State<TeacherTimetableScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _showExportActions(
-    BuildContext context, {
-    required bool markAsMine,
-    required List<TodayTeachingLesson> lessons,
-    required List<TimetablePeriod> periods,
-    required DateTime weekStart,
-    required String range,
-    required String title,
-  }) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: Text(
-                  markAsMine ? '分享 / 导出我的授课' : '分享 / 导出班级课表',
-                  style: Theme.of(ctx).textTheme.titleMedium,
-                ),
-              ),
-              ListTile(
-                leading: const Icon(AppIcons.fileSheet, color: TtStyle.accent),
-                title: const Text('导出 Excel'),
-                subtitle: const Text('生成本周课表表格并分享'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  await _exportExcel(
-                    lessons: lessons,
-                    periods: periods,
-                    weekStart: weekStart,
-                    range: range,
-                    title: title,
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(AppIcons.share, color: TtStyle.accent),
-                title: const Text('导出文本 / 图片备用'),
-                subtitle: const Text('复制为可读文本；图片可用系统截图'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final text = _formatWeekText(
-                    title: title,
-                    range: range,
-                    lessons: lessons,
-                    periods: periods,
-                    weekStart: weekStart,
-                  );
-                  await Share.share(text, subject: title);
-                },
-              ),
-              ListTile(
-                leading: const Icon(AppIcons.sparkles, color: TtStyle.accent),
-                title: const Text('AI 智能导入'),
-                subtitle: const Text('微信/本机文件或照片，OCR+AI'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  AiTimetableImportScreen.push(
-                    context,
-                    markAsMine: markAsMine,
-                  );
-                },
-              ),
-              if (!markAsMine)
-                ListTile(
-                  leading: const Icon(AppIcons.clock, color: TtStyle.accent),
-                  title: const Text('节次与作息'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const TimetablePeriodsScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ListTile(
-                leading: const Icon(AppIcons.plus, color: TtStyle.accent),
-                title: const Text('手动添加一节'),
-                subtitle: Text(
-                  markAsMine ? '写入指定班级并标记本人授课' : '写入当前所选班级',
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _openManualAdd(context);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formatWeekText({
-    required String title,
-    required String range,
-    required List<TodayTeachingLesson> lessons,
-    required List<TimetablePeriod> periods,
-    required DateTime weekStart,
-  }) {
-    final buf = StringBuffer()
-      ..writeln(title)
-      ..writeln(range)
-      ..writeln();
-    for (final p in periods) {
-      buf.writeln('${p.displayLabel} ${p.timeRange}');
-      for (var d = 1; d <= 7; d++) {
-        final day = weekStart.add(Duration(days: d - 1));
-        final cell = lessons
-            .where((l) => l.weekday == d && l.period == p.period)
-            .toList();
-        if (cell.isEmpty) continue;
-        final names = cell
-            .map((l) {
-              final c = l.classTitle.trim();
-              return c.isEmpty ? l.subject : '${l.subject}（$c）';
-            })
-            .join('、');
-        buf.writeln('  ${_weekFull[d - 1]} ${day.month}.${day.day}：$names');
-      }
-      buf.writeln();
-    }
-    return buf.toString();
-  }
-
-  Future<void> _exportExcel({
-    required List<TodayTeachingLesson> lessons,
-    required List<TimetablePeriod> periods,
-    required DateTime weekStart,
-    required String range,
-    required String title,
-  }) async {
-    try {
-      final excel = xls.Excel.createExcel();
-      const sheetName = '本周课表';
-      excel.rename('Sheet1', sheetName);
-      final sheet = excel[sheetName];
-      sheet
-          .cell(xls.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
-          .value = xls.TextCellValue('$title（$range）');
-      sheet
-          .cell(xls.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1))
-          .value = xls.TextCellValue('节次');
-      for (var d = 1; d <= 7; d++) {
-        final day = weekStart.add(Duration(days: d - 1));
-        sheet
-            .cell(xls.CellIndex.indexByColumnRow(columnIndex: d, rowIndex: 1))
-            .value = xls.TextCellValue(
-              '${_weekFull[d - 1]} ${day.month}.${day.day}',
-            );
-      }
-      for (var i = 0; i < periods.length; i++) {
-        final p = periods[i];
-        final row = i + 2;
-        sheet
-            .cell(xls.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-            .value = xls.TextCellValue(
-              '${p.displayLabel} ${p.timeRange}'.trim(),
-            );
-        for (var d = 1; d <= 7; d++) {
-          final cell = lessons
-              .where((l) => l.weekday == d && l.period == p.period)
-              .map((l) {
-                final c = l.classTitle.trim();
-                return c.isEmpty ? l.subject : '${l.subject} $c';
-              })
-              .join(' / ');
-          sheet
-              .cell(
-                xls.CellIndex.indexByColumnRow(columnIndex: d, rowIndex: row),
-              )
-              .value = xls.TextCellValue(cell);
-        }
-      }
-      final bytes = excel.encode();
-      if (bytes == null) throw StateError('encode failed');
-      final dir = await getTemporaryDirectory();
-      final path =
-          '${dir.path}/课表_${DateFormat('MMdd_HHmm').format(DateTime.now())}.xlsx';
-      await File(path).writeAsBytes(bytes, flush: true);
-      await FileShare.shareXlsx(filePath: path, subject: title);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导出失败：$e')),
-      );
-    }
   }
 }
 
@@ -1180,14 +757,14 @@ class _HintEmpty extends StatelessWidget {
   const _HintEmpty({
     required this.title,
     required this.subtitle,
-    required this.actionLabel,
-    required this.onAction,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String title;
   final String subtitle;
-  final String actionLabel;
-  final VoidCallback onAction;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1217,8 +794,13 @@ class _HintEmpty extends StatelessWidget {
                 height: 1.4,
               ),
             ),
-            const SizedBox(height: 18),
-            FilledButton(onPressed: onAction, child: Text(actionLabel)),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: onAction,
+                child: Text(actionLabel!),
+              ),
+            ],
           ],
         ),
       ),

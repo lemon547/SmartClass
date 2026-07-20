@@ -179,22 +179,20 @@ class _FilterChipButton extends StatelessWidget {
   }
 }
 
-/// 班级课表顶栏：班级名 + 科目筛选
+/// 班级课表顶栏：班级名（小字）+ 右侧「全部 / 仅自己」
 class ClassScheduleBar extends StatelessWidget {
   const ClassScheduleBar({
     super.key,
     required this.title,
-    required this.subjects,
-    required this.filterSubject,
+    required this.mineOnly,
     required this.onSwitchClass,
-    required this.onFilterChanged,
+    required this.onMineOnlyChanged,
   });
 
   final String title;
-  final List<String> subjects;
-  final String? filterSubject;
+  final bool mineOnly;
   final VoidCallback onSwitchClass;
-  final ValueChanged<String?> onFilterChanged;
+  final ValueChanged<bool> onMineOnlyChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -217,8 +215,8 @@ class ClassScheduleBar extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
                           color: TtStyle.title,
                         ),
                       ),
@@ -233,15 +231,86 @@ class ClassScheduleBar extends StatelessWidget {
               ),
             ),
           ),
-          if (subjects.isNotEmpty)
-            SubjectFilter(
-              label: '科目',
-              current: filterSubject,
-              options: subjects,
-              compact: true,
-              onChanged: onFilterChanged,
-            ),
+          const Spacer(),
+          _ScopeToggle(
+            mineOnly: mineOnly,
+            onChanged: onMineOnlyChanged,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// 全部 / 仅自己
+class _ScopeToggle extends StatelessWidget {
+  const _ScopeToggle({
+    required this.mineOnly,
+    required this.onChanged,
+  });
+
+  final bool mineOnly;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: TtStyle.line,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ScopeChip(
+            label: '全部',
+            selected: !mineOnly,
+            onTap: () => onChanged(false),
+          ),
+          _ScopeChip(
+            label: '仅自己',
+            selected: mineOnly,
+            onTap: () => onChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeChip extends StatelessWidget {
+  const _ScopeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      elevation: selected ? 0.5 : 0,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected ? TtStyle.accent : TtStyle.muted,
+            ),
+          ),
+        ),
       ),
     );
   }

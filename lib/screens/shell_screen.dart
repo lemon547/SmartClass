@@ -83,22 +83,22 @@ class _ShellScreenState extends State<ShellScreen> {
         destinations: const [
           NavigationDestination(
             icon: Icon(AppIcons.home),
-            selectedIcon: Icon(AppIcons.home),
+            selectedIcon: Icon(AppIcons.homeSelected),
             label: '首页',
           ),
           NavigationDestination(
-            icon: Icon(AppIcons.book),
-            selectedIcon: Icon(AppIcons.book),
+            icon: Icon(AppIcons.teach),
+            selectedIcon: Icon(AppIcons.teachSelected),
             label: '教学',
           ),
           NavigationDestination(
             icon: Icon(AppIcons.classes),
-            selectedIcon: Icon(AppIcons.classes),
+            selectedIcon: Icon(AppIcons.classesSelected),
             label: '班级',
           ),
           NavigationDestination(
             icon: Icon(AppIcons.more),
-            selectedIcon: Icon(AppIcons.more),
+            selectedIcon: Icon(AppIcons.moreSelected),
             label: '我的',
           ),
         ],

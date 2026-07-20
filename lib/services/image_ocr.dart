@@ -11,6 +11,31 @@ abstract final class ImageOcr {
     Uint8List bytes, {
     String? fileName,
   }) async {
+    final text = await _recognize(bytes, fileName: fileName);
+    if (text.trim().isEmpty) {
+      throw const FormatException(
+        '未能从图片中识别到文字。请换更清晰、文字更大的照片后重试。',
+      );
+    }
+    return text;
+  }
+
+  /// 聊天附件用：尽量抽出文字，失败则返回空串（不抛）。
+  static Future<String> extractPlainText(
+    Uint8List bytes, {
+    String? fileName,
+  }) async {
+    try {
+      return (await _recognize(bytes, fileName: fileName)).trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static Future<String> _recognize(
+    Uint8List bytes, {
+    String? fileName,
+  }) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       throw const FormatException('图片文字识别仅支持 Android / iOS 手机端');
     }
@@ -29,13 +54,7 @@ abstract final class ImageOcr {
     try {
       final input = InputImage.fromFilePath(file.path);
       final recognized = await recognizer.processImage(input);
-      final tsv = _layoutToTsv(recognized);
-      if (tsv.trim().isEmpty) {
-        throw const FormatException(
-          '未能从图片中识别到文字。请换更清晰、文字更大的照片后重试。',
-        );
-      }
-      return tsv;
+      return _layoutToTsv(recognized);
     } finally {
       await recognizer.close();
       try {

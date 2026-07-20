@@ -69,3 +69,17 @@ class TtStyle {
   // 未知科目：统一浅灰蓝，避免 hash 彩虹色
   return (TtStyle.courseBg, TtStyle.courseFg);
 }
+
+/// 按星期区分浅色（周一=1 … 周日=7），低饱和便于扫读
+(Color bg, Color fg) weekdayTint(int weekday) {
+  return switch (weekday) {
+    1 => (const Color(0xFFE8F3FF), const Color(0xFF1A5FB4)), // 蓝
+    2 => (const Color(0xFFE6F7EF), const Color(0xFF1F7A55)), // 绿
+    3 => (const Color(0xFFFFF0E6), const Color(0xFFB85C1A)), // 橙
+    4 => (const Color(0xFFF0EBFF), const Color(0xFF5B45B0)), // 紫
+    5 => (const Color(0xFFFFEBF1), const Color(0xFFA33D64)), // 粉
+    6 => (const Color(0xFFE6F6FA), const Color(0xFF1C7388)), // 青
+    7 => (const Color(0xFFFFF6DB), const Color(0xFF8A6A00)), // 黄
+    _ => (TtStyle.courseBg, TtStyle.courseFg),
+  };
+}

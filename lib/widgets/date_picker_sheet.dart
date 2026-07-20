@@ -330,33 +330,43 @@ class WeekDateStrip extends StatelessWidget {
     required this.selected,
     required this.onChanged,
     this.onOpenCalendar,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+    this.compact = false,
   });
 
   final DateTime selected;
   final ValueChanged<DateTime> onChanged;
   final VoidCallback? onOpenCalendar;
+  final EdgeInsetsGeometry padding;
+  /// 与班级等并排时略压缩高度与内边距
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final monday = selected.subtract(Duration(days: selected.weekday - 1));
     final days = List.generate(7, (i) => monday.add(Duration(days: i)));
     final today = DateTime.now();
+    final vPad = compact ? 6.0 : 10.0;
+    final hPad = compact ? 2.0 : 8.0;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: padding,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: AppTheme.surface,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+          padding: EdgeInsets.fromLTRB(hPad, vPad, hPad, vPad),
           child: Row(
             children: [
               IconButton(
                 visualDensity: VisualDensity.compact,
-                onPressed: () => onChanged(selected.subtract(const Duration(days: 7))),
-                icon: Icon(AppIcons.chevronLeft, color: AppTheme.blue, size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                onPressed: () =>
+                    onChanged(selected.subtract(const Duration(days: 7))),
+                icon: Icon(AppIcons.chevronLeft, color: AppTheme.blue, size: 18),
               ),
               Expanded(
                 child: Row(
@@ -367,6 +377,7 @@ class WeekDateStrip extends StatelessWidget {
                           date: d,
                           selected: _isSameDay(d, selected),
                           isToday: _isSameDay(d, today),
+                          compact: compact,
                           onTap: () => onChanged(d),
                         ),
                       ),
@@ -375,8 +386,10 @@ class WeekDateStrip extends StatelessWidget {
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onOpenCalendar,
-                icon: Icon(AppIcons.calendar, color: AppTheme.blue, size: 20),
+                icon: Icon(AppIcons.calendar, color: AppTheme.blue, size: 18),
               ),
             ],
           ),
@@ -392,37 +405,41 @@ class _WeekDayChip extends StatelessWidget {
     required this.selected,
     required this.isToday,
     required this.onTap,
+    this.compact = false,
   });
 
   final DateTime date;
   final bool selected;
   final bool isToday;
+  final bool compact;
   final VoidCallback onTap;
 
   static const _week = ['一', '二', '三', '四', '五', '六', '日'];
 
   @override
   Widget build(BuildContext context) {
+    final daySize = compact ? 26.0 : 32.0;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: EdgeInsets.symmetric(vertical: compact ? 0 : 4),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 _week[date.weekday - 1],
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: compact ? 10 : 11,
                   color: selected ? AppTheme.blue : AppTheme.tertiaryLabel,
                 ),
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: compact ? 2 : 4),
               Container(
-                width: 32,
-                height: 32,
+                width: daySize,
+                height: daySize,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected ? AppTheme.blue : Colors.transparent,
@@ -431,7 +448,7 @@ class _WeekDayChip extends StatelessWidget {
                 child: Text(
                   '${date.day}',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: compact ? 13 : 15,
                     fontWeight: FontWeight.w600,
                     color: selected
                         ? Colors.white

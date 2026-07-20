@@ -9,6 +9,7 @@ class AiChatMessage {
     required this.text,
     required this.at,
     this.proposal,
+    this.attachmentLabels = const [],
   });
 
   final String role; // user | assistant
@@ -18,11 +19,15 @@ class AiChatMessage {
   /// 仅 assistant：可确认写入的草稿（确认前不落业务库）。
   final AiActionProposal? proposal;
 
+  /// 用户消息附带的文件名（用于气泡展示；内容已并入发给模型的 text）。
+  final List<String> attachmentLabels;
+
   Map<String, Object?> toJson() => {
         'role': role,
         'text': text,
         'at': at.toIso8601String(),
         if (proposal != null) 'proposal': proposal!.toJson(),
+        if (attachmentLabels.isNotEmpty) 'attachments': attachmentLabels,
       };
 
   factory AiChatMessage.fromJson(Map<String, dynamic> json) {
@@ -31,11 +36,20 @@ class AiChatMessage {
     if (raw is Map) {
       proposal = AiActionProposal.fromJson(Map<String, dynamic>.from(raw));
     }
+    final atts = <String>[];
+    final rawAtt = json['attachments'];
+    if (rawAtt is List) {
+      for (final e in rawAtt) {
+        final s = e.toString().trim();
+        if (s.isNotEmpty) atts.add(s);
+      }
+    }
     return AiChatMessage(
       role: (json['role'] ?? 'assistant').toString(),
       text: (json['text'] ?? '').toString(),
       at: DateTime.tryParse((json['at'] ?? '').toString()) ?? DateTime.now(),
       proposal: proposal,
+      attachmentLabels: atts,
     );
   }
 
@@ -45,12 +59,14 @@ class AiChatMessage {
     DateTime? at,
     AiActionProposal? proposal,
     bool clearProposal = false,
+    List<String>? attachmentLabels,
   }) {
     return AiChatMessage(
       role: role ?? this.role,
       text: text ?? this.text,
       at: at ?? this.at,
       proposal: clearProposal ? null : (proposal ?? this.proposal),
+      attachmentLabels: attachmentLabels ?? this.attachmentLabels,
     );
   }
 }

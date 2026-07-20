@@ -6,7 +6,7 @@ import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
 
-/// 加分 / 扣分：独立全屏页（iOS 分组列表）
+/// 加分 / 扣分：选人 → 选原因 → 调分值 → 确认
 class QuickPointsScreen extends StatefulWidget {
   const QuickPointsScreen({
     super.key,
@@ -55,6 +55,8 @@ class _QuickPointsScreenState extends State<QuickPointsScreen> {
       ? const Color(0xFF34C759)
       : const Color(0xFFFF3B30);
 
+  String get _deltaLabel => '${widget.positive ? '+' : '-'}$_amount';
+
   @override
   void initState() {
     super.initState();
@@ -102,179 +104,70 @@ class _QuickPointsScreenState extends State<QuickPointsScreen> {
     final ctrl = context.watch<ClassController>();
     final presets = _presets(ctrl);
     final students = ctrl.searchStudents(_query);
-    final selectedStudent = _studentId == null
-        ? null
-        : ctrl.studentById(_studentId!);
-    final deltaLabel =
-        '${widget.positive ? '+' : '-'}$_amount';
+    final selectedStudent =
+        _studentId == null ? null : ctrl.studentById(_studentId!);
+    final verb = widget.positive ? '加分' : '扣分';
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: PageAppBar(
-        title: Text(widget.positive ? '加分' : '扣分'),
-      ),
+      appBar: PageAppBar(title: Text(verb)),
       body: Column(
         children: [
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
               children: [
-                if (selectedStudent != null) ...[
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface,
-                        borderRadius: BorderRadius.circular(12),
+                // 分值主视觉
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            StudentAvatar(
-                              name: selectedStudent.name,
-                              size: 48,
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    selectedStudent.name,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: -0.3,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '当前 ${selectedStudent.points} 分',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: AppTheme.tertiaryLabel,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Text(
-                              deltaLabel,
-                              style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                                color: _accent,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
-                ],
-                const SizedBox(height: 12),
-                SearchField(
-                  controller: _search,
-                  hint: '搜索学生',
-                  onChanged: (v) => setState(() => _query = v),
-                ),
-                GroupedSection(
-                  header: '选择学生',
-                  children: [
-                    if (students.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Text(
-                          '没有匹配的学生',
-                          style: TextStyle(color: AppTheme.tertiaryLabel),
+                  child: Column(
+                    children: [
+                      Text(
+                        selectedStudent == null
+                            ? '请先选择学生'
+                            : '${selectedStudent.name} · 当前 ${selectedStudent.points} 分',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.secondaryLabel,
+                          fontWeight: FontWeight.w500,
                         ),
-                      )
-                    else
-                      for (final s in students)
-                        GroupedTile(
-                          title: s.name,
-                          subtitle: [
-                            if (s.studentNo.isNotEmpty) s.studentNo,
-                            if (s.groupName.isNotEmpty) s.groupName,
-                          ].join(' · ').isEmpty
-                              ? null
-                              : [
-                                  if (s.studentNo.isNotEmpty) s.studentNo,
-                                  if (s.groupName.isNotEmpty) s.groupName,
-                                ].join(' · '),
-                          leading: StudentAvatar(name: s.name),
-                          trailing: _studentId == s.id
-                              ? Icon(AppIcons.circleCheck, color: _accent)
-                              : null,
-                          onTap: () => setState(() => _studentId = s.id),
-                        ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                GroupedSection(
-                  header: widget.positive ? '加分原因' : '扣分原因',
-                  footer: '可在「班级 → 积分规则」中自定义',
-                  children: [
-                    for (final p in presets)
-                      GroupedTile(
-                        title: p.reason,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${p.delta > 0 ? '+' : ''}${p.delta}',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                color: _accent,
-                              ),
-                            ),
-                            if (_selected.reason == p.reason) ...[
-                              const SizedBox(width: 8),
-                              Icon(AppIcons.circleCheck, color: _accent),
-                            ],
-                          ],
-                        ),
-                        onTap: () => setState(() {
-                          _selected = p;
-                          _amount = p.delta.abs().clamp(1, 99);
-                        }),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                GroupedSection(
-                  header: '分值',
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
+                      const SizedBox(height: 12),
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _StepButton(
+                          _RoundIconBtn(
                             icon: AppIcons.circleMinus,
                             enabled: _amount > 1,
                             onTap: () => setState(() {
                               if (_amount > 1) _amount--;
                             }),
                           ),
-                          SizedBox(
-                            width: 88,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
                             child: Text(
-                              '$_amount',
-                              textAlign: TextAlign.center,
+                              _deltaLabel,
                               style: TextStyle(
-                                fontSize: 36,
+                                fontSize: 44,
                                 fontWeight: FontWeight.w700,
                                 color: _accent,
-                                letterSpacing: -1,
+                                letterSpacing: -1.5,
+                                height: 1,
                               ),
                             ),
                           ),
-                          _StepButton(
+                          _RoundIconBtn(
                             icon: AppIcons.circlePlus,
                             enabled: _amount < 99,
                             onTap: () => setState(() {
@@ -283,8 +176,118 @@ class _QuickPointsScreenState extends State<QuickPointsScreen> {
                           ),
                         ],
                       ),
-                    ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _selected.reason,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.tertiaryLabel,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                Text(
+                  '原因',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.tertiaryLabel,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final p in presets)
+                      _ReasonChip(
+                        label: p.reason,
+                        delta: p.delta,
+                        accent: _accent,
+                        selected: _selected.reason == p.reason,
+                        onTap: () => setState(() {
+                          _selected = p;
+                          _amount = p.delta.abs().clamp(1, 99);
+                        }),
+                      ),
                   ],
+                ),
+                const SizedBox(height: 18),
+
+                Text(
+                  '选择学生',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.tertiaryLabel,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _search,
+                  onChanged: (v) => setState(() => _query = v),
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: '搜索姓名 / 学号',
+                    hintStyle: TextStyle(
+                      color: AppTheme.tertiaryLabel,
+                      fontSize: 14,
+                    ),
+                    prefixIcon: Icon(
+                      AppIcons.search,
+                      size: 18,
+                      color: AppTheme.tertiaryLabel,
+                    ),
+                    filled: true,
+                    fillColor: AppTheme.surface,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: students.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Center(
+                            child: Text(
+                              '没有匹配的学生',
+                              style: TextStyle(color: AppTheme.tertiaryLabel),
+                            ),
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            for (var i = 0; i < students.length; i++) ...[
+                              if (i > 0)
+                                Divider(
+                                  height: 1,
+                                  indent: 56,
+                                  color: AppTheme.separator
+                                      .withValues(alpha: 0.5),
+                                ),
+                              _StudentPickRow(
+                                student: students[i],
+                                selected: _studentId == students[i].id,
+                                accent: _accent,
+                                onTap: () => setState(
+                                  () => _studentId = students[i].id,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -295,10 +298,15 @@ class _QuickPointsScreenState extends State<QuickPointsScreen> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: SizedBox(
                 width: double.infinity,
+                height: 50,
                 child: FilledButton(
                   style: FilledButton.styleFrom(
                     backgroundColor: _accent,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: const StadiumBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   onPressed: _studentId == null || _submitting
                       ? null
@@ -313,11 +321,9 @@ class _QuickPointsScreenState extends State<QuickPointsScreen> {
                           ),
                         )
                       : Text(
-                          '确认${widget.positive ? '加分' : '扣分'} $deltaLabel',
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          selectedStudent == null
+                              ? '确认$verb $_deltaLabel'
+                              : '给${selectedStudent.name}$verb $_deltaLabel',
                         ),
                 ),
               ),
@@ -329,8 +335,8 @@ class _QuickPointsScreenState extends State<QuickPointsScreen> {
   }
 }
 
-class _StepButton extends StatelessWidget {
-  const _StepButton({
+class _RoundIconBtn extends StatelessWidget {
+  const _RoundIconBtn({
     required this.icon,
     required this.enabled,
     required this.onTap,
@@ -343,7 +349,7 @@ class _StepButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.fill,
+      color: AppTheme.fill.withValues(alpha: enabled ? 1 : 0.5),
       shape: const CircleBorder(),
       child: InkWell(
         onTap: enabled ? onTap : null,
@@ -353,7 +359,137 @@ class _StepButton extends StatelessWidget {
           height: 44,
           child: Icon(
             icon,
-            color: enabled ? AppTheme.blue : AppTheme.quaternaryLabel,
+            size: 22,
+            color: enabled ? AppTheme.label : AppTheme.quaternaryLabel,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReasonChip extends StatelessWidget {
+  const _ReasonChip({
+    required this.label,
+    required this.delta,
+    required this.accent,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int delta;
+  final Color accent;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final deltaText = '${delta > 0 ? '+' : ''}$delta';
+    return Material(
+      color: selected ? accent.withValues(alpha: 0.12) : AppTheme.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected
+                  ? accent.withValues(alpha: 0.45)
+                  : AppTheme.separator.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: selected ? accent : AppTheme.label,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                deltaText,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentPickRow extends StatelessWidget {
+  const _StudentPickRow({
+    required this.student,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final Student student;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final sub = [
+      if (student.studentNo.isNotEmpty) student.studentNo,
+      if (student.groupName.isNotEmpty) student.groupName,
+      '${student.points}分',
+    ].join(' · ');
+
+    return Material(
+      color: selected ? accent.withValues(alpha: 0.06) : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              StudentAvatar(name: student.name, size: 36),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      student.name,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                    if (sub.isNotEmpty)
+                      Text(
+                        sub,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.tertiaryLabel,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected ? AppIcons.circleCheck : AppIcons.circle,
+                size: 22,
+                color: selected ? accent : AppTheme.quaternaryLabel,
+              ),
+            ],
           ),
         ),
       ),

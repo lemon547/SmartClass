@@ -81,41 +81,65 @@ class HomeTodoCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => showTodoCreateSheet(context),
-                    icon: const Icon(AppIcons.plus, size: 18),
-                    label: const Text('新建待办'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.blue,
-                      side: BorderSide(
-                        color: AppTheme.blue.withValues(alpha: 0.35),
-                      ),
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Container(
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppTheme.fill.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: AppTheme.blue.withValues(alpha: 0.28),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => showTodoCreateSheet(context),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                AppIcons.plus,
+                                size: 16,
+                                color: AppTheme.blue,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '新建待办',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: AppTheme.blue,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                  tooltip: '语音输入',
-                  onPressed: () => showVoiceTodoSheet(context),
-                  icon: const Icon(AppIcons.mic, size: 20),
-                  style: IconButton.styleFrom(
-                    foregroundColor: AppTheme.blue,
-                    side: BorderSide(
-                      color: AppTheme.blue.withValues(alpha: 0.35),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => showVoiceTodoSheet(context),
+                      child: SizedBox(
+                        width: 40,
+                        height: 36,
+                        child: Icon(
+                          AppIcons.mic,
+                          size: 18,
+                          color: AppTheme.blue,
+                        ),
+                      ),
                     ),
-                    minimumSize: const Size(44, 44),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           if (pending.isEmpty && done.isEmpty)
@@ -226,11 +250,19 @@ class _TodoRow extends StatelessWidget {
                 ),
               ),
               if (!todo.isCreatedToday && !todo.done)
-                Text(
-                  '往日',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.quaternaryLabel,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppTheme.fill,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '昨日',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.secondaryLabel.withValues(alpha: 0.85),
+                    ),
                   ),
                 ),
             ],
@@ -436,8 +468,19 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
         });
         return;
       }
-      final raw = await VoiceSttService(apiKey: ai.sttApiKey).transcribeFile(path);
+      final raw = (await VoiceSttService(apiKey: ai.sttApiKey).transcribeFile(path))
+          .trim();
       if (!mounted) return;
+      // 静音/噪声时 SenseVoice 常吐标点或语气词，不当作有效识别
+      if (!_looksLikeSpeech(raw)) {
+        setState(() {
+          _busy = false;
+          _raw = '';
+          _polished = '';
+          _error = '没听清，请对着麦克风再说一次';
+        });
+        return;
+      }
       setState(() {
         _raw = raw;
         _busy = false;
@@ -480,6 +523,30 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
     if (title.isEmpty) return;
     await context.read<ClassController>().addTodo(title);
     if (mounted) Navigator.pop(context);
+  }
+
+  /// 去掉标点/空白后仍需有实质内容；纯「嗯」「啊」等视为未说话
+  static bool _looksLikeSpeech(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return false;
+    final core = t.replaceAll(
+      RegExp(r'[\s.,，。、！？!?;；:：…·\-—_~～"“”‘’（）()【】\[\]<>《》]+'),
+      '',
+    );
+    if (core.isEmpty) return false;
+    const fillers = {
+      '嗯',
+      '啊',
+      '哦',
+      '呃',
+      '唔',
+      '欸',
+      '哎',
+      '嗯嗯',
+      '啊啊',
+      '哦哦',
+    };
+    return !fillers.contains(core);
   }
 
   String get _hint {
@@ -574,15 +641,6 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
                 style: const TextStyle(fontSize: 16, height: 1.35),
               ),
             ),
-            if (_raw.isNotEmpty &&
-                _polished.isNotEmpty &&
-                _raw != _polished) ...[
-              const SizedBox(height: 6),
-              Text(
-                '原文：$_raw',
-                style: TextStyle(fontSize: 12, color: AppTheme.quaternaryLabel),
-              ),
-            ],
           ],
           const SizedBox(height: 16),
           Row(
@@ -590,13 +648,20 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                  ),
                   child: const Text('取消'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: display.isEmpty || _busy || _recording ? null : _save,
+                  onPressed:
+                      display.isEmpty || _busy || _recording ? null : _save,
+                  style: FilledButton.styleFrom(
+                    shape: const StadiumBorder(),
+                  ),
                   child: const Text('创建'),
                 ),
               ),

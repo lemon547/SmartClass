@@ -148,7 +148,7 @@ abstract final class LegalTexts {
 ''';
 
   /// 安全使用提示（可单独展示或附录）
-  static const securityTipsTitle = '安全与合规使用提示';
+  static const securityTipsTitle = '安全协议';
 
   static const securityTips = '''
 《班主任助手》安全与合规使用提示

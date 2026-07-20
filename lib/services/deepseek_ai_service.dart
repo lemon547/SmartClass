@@ -168,6 +168,77 @@ class DeepSeekAiService {
     return false;
   }
 
+  /// 是否需要深度分析（自动判断，无需用户点「详细」）。
+  /// 简单查询走快答；复杂分析/方案/长文走 Pro+思考。
+  static bool looksLikeDeepQuestion(String question) {
+    final q = question.trim();
+    if (q.isEmpty) return false;
+
+    // 短句且像快查：不走深度
+    const quickOnly = [
+      '今天有哪些课',
+      '这周课表',
+      '本周课表',
+      '谁积分最高',
+      '今天待办',
+    ];
+    for (final k in quickOnly) {
+      if (q == k || q.replaceAll('？', '').replaceAll('?', '') == k) {
+        return false;
+      }
+    }
+
+    const deepKeys = [
+      '分析',
+      '对比',
+      '比较',
+      '全面',
+      '深入',
+      '详细',
+      '细致',
+      '诊断',
+      '原因',
+      '趋势',
+      '优劣势',
+      '优缺点',
+      '怎么提高',
+      '如何提高',
+      '怎么提升',
+      '如何提升',
+      '改进建议',
+      '教学建议',
+      '方案',
+      '策略',
+      '拟定',
+      '设计一套',
+      '整套',
+      '家长会',
+      '班会稿',
+      '主题班会',
+      '发言稿',
+      '学情',
+      '进步退步',
+      '各科对比',
+      '分层',
+      '帮我写',
+      '帮我拟',
+      '起草',
+      '总结一下',
+      '写一份',
+      '出一份',
+    ];
+    for (final k in deepKeys) {
+      if (q.contains(k)) return true;
+    }
+
+    // 较长、多要点的问题更可能需要细致回答
+    if (q.length >= 48) return true;
+    if (q.contains('，') && q.contains('？') && q.length >= 28) return true;
+    if (RegExp(r'[1一][、.．]|[2二][、.．]').hasMatch(q)) return true;
+
+    return false;
+  }
+
   /// 轻量选型：只看数据包目录，输出 JSON（类似 Skill 先读 description 再决定加载）。
   Future<AiPackSelectResult> selectClassDataPacks({
     required String question,

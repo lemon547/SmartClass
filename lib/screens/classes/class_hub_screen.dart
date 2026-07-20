@@ -72,7 +72,7 @@ class ClassHubScreen extends StatelessWidget {
             Padding(
               padding: EdgeInsets.fromLTRB(canPop ? 56 : 20, 0, 20, 0),
               child: Text(
-                '切换班级与本班工具；考勤、点名、留痕、成绩请用底部 Tab',
+                '切换班级与本班工具；考勤、留痕、成绩请用底部 Tab',
                 style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
               ),
             ),

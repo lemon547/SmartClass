@@ -75,37 +75,32 @@ class AiSettingsController extends ChangeNotifier {
 
   String get planSubtitle => switch (_plan) {
         AiExperiencePlan.experience100 =>
-          '日常 Flash 又快又省；聊天里点「深度」才用满血 Pro。问本班才带数据。',
+          '日常 Flash 又快又省；难题会自动加深分析。问本班才带数据。',
         AiExperiencePlan.saver => '更短回答、不思考；适合偶尔问问。',
         AiExperiencePlan.fullPower => '始终 Pro，可开思考；更聪明但更费余额。',
       };
 
   /// 设置页：说明当前计费/模型档位（可含技术词）。
   String get runtimeHint {
-    final deep = _deepAnalyze;
     return switch (_plan) {
-      AiExperiencePlan.experience100 => deep
-          ? '本轮：满血 Pro + 思考（较费，答完建议关掉）'
-          : '本轮：Flash 快答 · 约¥100/月很宽裕',
+      AiExperiencePlan.experience100 =>
+        '日常 Flash 快答；系统按问题难度自动决定是否加深',
       AiExperiencePlan.saver => '本轮：最省模式',
-      AiExperiencePlan.fullPower => deep
+      AiExperiencePlan.fullPower => _thinkingEnabled
           ? '本轮：Pro + 思考'
           : '本轮：Pro（思考关）',
     };
   }
 
   /// 聊天页顶栏：给老师看的状态，不提模型名与价格。
-  String get chatStatusHint {
-    if (_deepAnalyze) return '详细分析已开启 · 回答会更细致';
-    return '可查课表、成绩、积分、考勤与待办';
-  }
+  String get chatStatusHint => '可查课表、成绩、积分、考勤与待办';
 
-  /// 按档位选模型：体验优先日常 Flash；点「深度」才临时上 Pro+思考。
+  /// 按档位选模型：体验优先日常 Flash；难题由调用方 forceThinking 自动加深。
   DeepSeekAiService createService({
     bool? forceThinking,
     int? maxTokens,
   }) {
-    final deep = forceThinking ?? (_thinkingEnabled || _deepAnalyze);
+    final deep = forceThinking ?? _thinkingEnabled;
     final String model;
     final bool think;
     final int tokens;

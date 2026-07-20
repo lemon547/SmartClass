@@ -10,6 +10,7 @@ import 'package:smart_class/services/media_open.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
+import 'package:smart_class/widgets/app_toast.dart';
 import 'package:uuid/uuid.dart';
 
 enum _LeaveFilter { active, overdue, returned, all }
@@ -222,13 +223,40 @@ class _LeaveScreenState extends State<LeaveScreen> {
                                     if (e.isActive)
                                       TextButton(
                                         onPressed: () async {
+                                          final name = ctrl.students
+                                                  .where((s) => s.id == e.studentId)
+                                                  .map((s) => s.name)
+                                                  .firstOrNull ??
+                                              '该学生';
+                                          final ok =
+                                              await showCupertinoDialog<bool>(
+                                            context: context,
+                                            builder: (ctx) =>
+                                                CupertinoAlertDialog(
+                                              title: const Text('确认销假？'),
+                                              content: Text(
+                                                '将「$name」标记为已销假，确认后不可撤销。',
+                                              ),
+                                              actions: [
+                                                CupertinoDialogAction(
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx, false),
+                                                  child: const Text('取消'),
+                                                ),
+                                                CupertinoDialogAction(
+                                                  onPressed: () =>
+                                                      Navigator.pop(ctx, true),
+                                                  child: const Text('确认销假'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (ok != true || !context.mounted) {
+                                            return;
+                                          }
                                           await ctrl.returnLeave(e.id);
                                           if (context.mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                  content: Text('已销假')),
-                                            );
+                                            AppToast.success(context, '已销假');
                                           }
                                         },
                                         child: const Text('销假'),

@@ -74,28 +74,14 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> {
                       icon: const Icon(AppIcons.chevronLeft),
                       onPressed: () => Navigator.maybePop(context),
                     ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '工作留痕',
-                          style: TextStyle(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
-                            height: 1.1,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '共 ${ctrl.workLogs.length} 条记录 · 关键时刻拿得出凭据',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppTheme.tertiaryLabel,
-                          ),
-                        ),
-                      ],
+                  const Expanded(
+                    child: Text(
+                      '工作留痕',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                      ),
                     ),
                   ),
                   IconButton(

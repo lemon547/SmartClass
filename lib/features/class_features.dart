@@ -3,7 +3,6 @@ import 'package:smart_class/models/models.dart';
 /// 功能 id（首页常用工具 /「班级」入口共用）
 abstract final class ClassFeatureIds {
   static const students = 'students';
-  static const rollCall = 'rollCall';
   static const attendance = 'attendance';
   static const grades = 'grades';
   static const timetable = 'timetable';
@@ -56,14 +55,6 @@ abstract final class ClassFeatures {
       group: ClassFeatureGroup.teaching,
       defaultHomeroom: true,
       defaultSubject: true,
-    ),
-    ClassFeatureDef(
-      id: ClassFeatureIds.rollCall,
-      title: '随机点名',
-      group: ClassFeatureGroup.teaching,
-      defaultHomeroom: true,
-      defaultSubject: true,
-      homeShortcut: true,
     ),
     ClassFeatureDef(
       id: ClassFeatureIds.attendance,

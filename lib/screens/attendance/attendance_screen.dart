@@ -7,7 +7,6 @@ import 'package:smart_class/services/file_share.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
 import 'package:smart_class/widgets/apple_widgets.dart';
-import 'package:smart_class/widgets/class_switcher_sheet.dart';
 import 'package:smart_class/widgets/date_picker_sheet.dart';
 
 class AttendanceScreen extends StatefulWidget {
@@ -179,52 +178,105 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: ctrl.classes.length > 1
-                        ? () => showClassSwitcherSheet(context)
-                        : null,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Text(
+                PopupMenuButton<String>(
+                  enabled: ctrl.classes.length > 1,
+                  tooltip: '切换班级',
+                  offset: const Offset(0, 36),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  onSelected: (id) {
+                    if (id != ctrl.currentClass?.id) {
+                      ctrl.switchClass(id);
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    for (final c in ctrl.classes)
+                      PopupMenuItem<String>(
+                        value: c.id,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                c.displayTitle,
+                                style: TextStyle(
+                                  fontWeight: c.id == ctrl.currentClass?.id
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                  color: c.id == ctrl.currentClass?.id
+                                      ? AppTheme.blue
+                                      : AppTheme.label,
+                                ),
+                              ),
+                            ),
+                            if (c.id == ctrl.currentClass?.id)
+                              Icon(
+                                AppIcons.circleCheck,
+                                size: 18,
+                                color: AppTheme.blue,
+                              ),
+                          ],
+                        ),
+                      ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 88),
+                          child: Text(
                             classTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 15,
+                              fontSize: 14,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          if (ctrl.classes.length > 1) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.expand_more,
-                              size: 18,
-                              color: AppTheme.tertiaryLabel,
-                            ),
-                          ],
+                        ),
+                        if (ctrl.classes.length > 1) ...[
+                          const SizedBox(width: 2),
+                          Icon(
+                            Icons.expand_more,
+                            size: 18,
+                            color: AppTheme.tertiaryLabel,
+                          ),
                         ],
-                      ),
+                      ],
                     ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: WeekDateStrip(
+                    selected: date,
+                    compact: true,
+                    padding: EdgeInsets.zero,
+                    onChanged: (d) => ctrl.setSelectedDate(d),
+                    onOpenCalendar: () => _pickDate(ctrl, date),
                   ),
                 ),
                 if (!isToday)
                   TextButton(
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                     onPressed: () => ctrl.setSelectedDate(DateTime.now()),
-                    child: const Text('今天'),
+                    child: const Text('今天', style: TextStyle(fontSize: 13)),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          WeekDateStrip(
-            selected: date,
-            onChanged: (d) => ctrl.setSelectedDate(d),
-            onOpenCalendar: () => _pickDate(ctrl, date),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Align(

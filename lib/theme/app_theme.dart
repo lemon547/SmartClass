@@ -3,31 +3,35 @@ import 'package:flutter/services.dart';
 
 /// 主题模式。
 ///
-/// 白天 / 夜间 / 护眼：改色板。
+/// 白天 / 夜间：改色板。
 /// 懒羊羊：不改全局配色（与白天相同），只开启立绘贴纸皮肤。
 enum AppThemeMode {
   day,
   night,
+  /// 已下线，仅兼容旧本地存储；加载时映射为白天
   eyeCare,
   paddi;
 
   String get label => switch (this) {
         AppThemeMode.day => '白天模式',
         AppThemeMode.night => '夜间模式',
-        AppThemeMode.eyeCare => '护眼模式',
+        AppThemeMode.eyeCare => '白天模式',
         AppThemeMode.paddi => '懒羊羊皮肤',
       };
 
   String get hint => switch (this) {
         AppThemeMode.day => '清爽浅色',
         AppThemeMode.night => '深色护眼',
-        AppThemeMode.eyeCare => '绿豆沙背景',
+        AppThemeMode.eyeCare => '清爽浅色',
         AppThemeMode.paddi => '少量贴纸点缀，图标与配色照常',
       };
 
+  /// 设置页可选主题（不含已下线项）
+  static const selectable = [day, night, paddi];
+
   static AppThemeMode fromStorage(String? raw) => switch (raw) {
         'night' => AppThemeMode.night,
-        'eyeCare' => AppThemeMode.eyeCare,
+        'eyeCare' => AppThemeMode.day, // 护眼模式已移除
         'paddi' => AppThemeMode.paddi,
         _ => AppThemeMode.day,
       };
@@ -196,6 +200,17 @@ class AppTheme {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
+      // 与 FilledButton 同高、同圆角，避免成对按钮一胶囊一圆角矩形
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: blue,
+          minimumSize: const Size.fromHeight(50),
+          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          side: BorderSide(color: blue.withValues(alpha: 0.35)),
+        ),
+      ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: blue,
@@ -249,23 +264,42 @@ class AppTheme {
         ),
       ),
       dialogTheme: DialogThemeData(backgroundColor: surface),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 0,
+        backgroundColor: dark
+            ? const Color(0xF22C2C2E)
+            : const Color(0xF21C1C1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        insetPadding: const EdgeInsets.fromLTRB(24, 0, 24, 96),
+        contentTextStyle: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: Colors.white,
+          height: 1.3,
+        ),
+        actionTextColor: blue,
+        disabledActionTextColor: Colors.white54,
+      ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 56,
+        height: 58,
         backgroundColor: navBar,
         elevation: 0,
-        indicatorColor: Colors.transparent,
+        indicatorColor: blue.withValues(alpha: 0.1),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
             color: selected ? blue : tertiaryLabel,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
-            size: 24,
+            size: 22,
             color: selected ? blue : tertiaryLabel,
           );
         }),

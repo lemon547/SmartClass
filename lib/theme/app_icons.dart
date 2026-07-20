@@ -6,12 +6,16 @@ abstract final class AppIcons {
   /// 品牌兜底：班级/学生语义（启动页用 AppBrandMark）
   static const IconData logo = LucideIcons.users;
   static const IconData home = LucideIcons.house;
+  /// 底栏选中态（稍粗线宽）
+  static const IconData homeSelected = LucideIcons.house600;
   static const IconData students = LucideIcons.users;
-  /// 底部「班级」Tab
-  static const IconData classes = LucideIcons.school;
+  /// 底部「班级」Tab：班级=学生群体，不用教学楼
+  static const IconData classes = LucideIcons.usersRound;
+  static const IconData classesSelected = LucideIcons.usersRound600;
   static const IconData attendance = LucideIcons.clipboardCheck;
-  /// 「我的」Tab：个人中心语义
-  static const IconData more = LucideIcons.circleUserRound;
+  /// 「我的」Tab
+  static const IconData more = LucideIcons.userRound;
+  static const IconData moreSelected = LucideIcons.userRound600;
 
   static const IconData plus = LucideIcons.plus;
   static const IconData minus = LucideIcons.minus;
@@ -31,6 +35,9 @@ abstract final class AppIcons {
   static const IconData gift = LucideIcons.gift;
   static const IconData notebook = LucideIcons.notebookPen;
   static const IconData book = LucideIcons.bookOpen;
+  /// 底部「教学」Tab
+  static const IconData teach = LucideIcons.graduationCap;
+  static const IconData teachSelected = LucideIcons.graduationCap600;
   static const IconData grid = LucideIcons.grid2x2;
   static const IconData dices = LucideIcons.dices;
   static const IconData clipboardList = LucideIcons.clipboardList;
