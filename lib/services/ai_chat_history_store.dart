@@ -10,6 +10,8 @@ class AiChatMessage {
     required this.at,
     this.proposal,
     this.attachmentLabels = const [],
+    this.thinking,
+    this.references = const [],
   });
 
   final String role; // user | assistant
@@ -22,12 +24,20 @@ class AiChatMessage {
   /// 用户消息附带的文件名（用于气泡展示；内容已并入发给模型的 text）。
   final List<String> attachmentLabels;
 
+  /// 仅 assistant：模型的思考过程（reasoning_content），可折叠展示。
+  final String? thinking;
+
+  /// 仅 assistant：本次回答参考了哪些本机数据包（如「课表」「待办」「成绩摘要」）。
+  final List<String> references;
+
   Map<String, Object?> toJson() => {
         'role': role,
         'text': text,
         'at': at.toIso8601String(),
         if (proposal != null) 'proposal': proposal!.toJson(),
         if (attachmentLabels.isNotEmpty) 'attachments': attachmentLabels,
+        if (thinking != null && thinking!.isNotEmpty) 'thinking': thinking,
+        if (references.isNotEmpty) 'references': references,
       };
 
   factory AiChatMessage.fromJson(Map<String, dynamic> json) {
@@ -44,12 +54,23 @@ class AiChatMessage {
         if (s.isNotEmpty) atts.add(s);
       }
     }
+    final refs = <String>[];
+    final rawRefs = json['references'];
+    if (rawRefs is List) {
+      for (final e in rawRefs) {
+        final s = e.toString().trim();
+        if (s.isNotEmpty) refs.add(s);
+      }
+    }
+    final thinking = (json['thinking'] ?? '').toString().trim();
     return AiChatMessage(
       role: (json['role'] ?? 'assistant').toString(),
       text: (json['text'] ?? '').toString(),
       at: DateTime.tryParse((json['at'] ?? '').toString()) ?? DateTime.now(),
       proposal: proposal,
       attachmentLabels: atts,
+      thinking: thinking.isEmpty ? null : thinking,
+      references: refs,
     );
   }
 
@@ -60,6 +81,9 @@ class AiChatMessage {
     AiActionProposal? proposal,
     bool clearProposal = false,
     List<String>? attachmentLabels,
+    String? thinking,
+    bool clearThinking = false,
+    List<String>? references,
   }) {
     return AiChatMessage(
       role: role ?? this.role,
@@ -67,6 +91,8 @@ class AiChatMessage {
       at: at ?? this.at,
       proposal: clearProposal ? null : (proposal ?? this.proposal),
       attachmentLabels: attachmentLabels ?? this.attachmentLabels,
+      thinking: clearThinking ? null : (thinking ?? this.thinking),
+      references: references ?? this.references,
     );
   }
 }

@@ -193,9 +193,17 @@ class SimpleBarChart extends StatelessWidget {
                   toY: items[i].value,
                   width: items.length > 8 ? 10 : 16,
                   borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(4),
+                    top: Radius.circular(6),
                   ),
                   color: items[i].color ?? AppTheme.blue,
+                  gradient: LinearGradient(
+                    colors: [
+                      (items[i].color ?? AppTheme.blue).withValues(alpha: 0.55),
+                      (items[i].color ?? AppTheme.blue),
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
                 ),
               ],
             ),

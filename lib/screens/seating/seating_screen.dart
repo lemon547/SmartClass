@@ -299,6 +299,9 @@ class _SeatingScreenState extends State<SeatingScreen> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final cellW =
+                    ((constraints.maxWidth - 24) / cols).clamp(56.0, 96.0);
+                final cellH = (cellW * 0.9).clamp(60.0, 86.0);
                 return SingleChildScrollView(
                   child: ConstrainedBox(
                     constraints:
@@ -307,10 +310,31 @@ class _SeatingScreenState extends State<SeatingScreen> {
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              Container(
+                                width: cols * cellW,
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 8, horizontal: 12),
+                                margin: const EdgeInsets.only(bottom: 10),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.separator
+                                      .withValues(alpha: 0.4),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '讲台',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.secondaryLabel,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
                               for (var r = 0; r < rows; r++)
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -318,6 +342,8 @@ class _SeatingScreenState extends State<SeatingScreen> {
                                     for (var c = 0; c < cols; c++)
                                       _SeatCell(
                                         student: _at(ctrl, r, c),
+                                        cellW: cellW,
+                                        cellH: cellH,
                                         highlighted: _swapFromId != null &&
                                             _at(ctrl, r, c)?.id ==
                                                 _swapFromId,
@@ -470,44 +496,108 @@ class _SeatCell extends StatelessWidget {
     required this.onTap,
     this.onLongPress,
     this.highlighted = false,
+    this.cellW = 80,
+    this.cellH = 72,
   });
 
   final Student? student;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool highlighted;
+  final double cellW;
+  final double cellH;
 
   @override
   Widget build(BuildContext context) {
-    final filled = student != null;
+    final s = student;
+    final filled = s != null;
+    final isGirl = filled && s.gender.contains('女');
+
+    Color tint;
+    if (highlighted) {
+      tint = AppTheme.blue.withValues(alpha: 0.30);
+    } else if (filled) {
+      tint = isGirl
+          ? const Color(0xFFFCE7F3)
+          : AppTheme.blue.withValues(alpha: 0.12);
+    } else {
+      tint = Colors.transparent;
+    }
+
     return Padding(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       child: Material(
-        color: highlighted
-            ? AppTheme.blue.withValues(alpha: 0.28)
-            : filled
-                ? AppTheme.blue.withValues(alpha: 0.12)
-                : AppTheme.surface,
-        borderRadius: BorderRadius.circular(10),
+        color: tint,
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
           onLongPress: onLongPress,
-          borderRadius: BorderRadius.circular(10),
-          child: SizedBox(
-            width: 64,
-            height: 56,
-            child: Center(
-              child: Text(
-                student?.name ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: filled ? AppTheme.blue : AppTheme.tertiaryLabel,
-                ),
-              ),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: cellW,
+            height: cellH,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: filled
+                  ? (highlighted
+                      ? Border.all(color: AppTheme.blue, width: 2)
+                      : null)
+                  : Border.all(
+                      color: AppTheme.separator.withValues(alpha: 0.7),
+                      width: 1,
+                    ),
             ),
+            child: filled
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isGirl
+                              ? const Color(0xFFEC4899).withValues(alpha: 0.18)
+                              : AppTheme.blue.withValues(alpha: 0.20),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          s.name.isNotEmpty ? s.name[0] : '?',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isGirl
+                                ? const Color(0xFFBE185D)
+                                : AppTheme.blue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Text(
+                          s.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.label,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Center(
+                    child: Text(
+                      '＋',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: AppTheme.quaternaryLabel,
+                      ),
+                    ),
+                  ),
           ),
         ),
       ),

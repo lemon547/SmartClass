@@ -4,6 +4,18 @@ import 'package:http/http.dart' as http;
 import 'package:smart_class/services/ai_class_context.dart';
 import 'package:smart_class/theme/mascot_assets.dart';
 
+/// AI 回复结果：正文 + 思考过程（reasoning_content）。
+class AiChatResult {
+  const AiChatResult({required this.content, this.reasoning});
+
+  /// 给用户看的正文。
+  final String content;
+
+  /// 模型的思考过程（思考模式开启时由 DeepSeek 返回），可折叠展示。
+  /// 可能为 null（未开启思考或模型未返回）。
+  final String? reasoning;
+}
+
 /// DeepSeek Chat Completions（OpenAI 兼容）。
 class DeepSeekAiService {
   DeepSeekAiService({
@@ -98,6 +110,67 @@ class DeepSeekAiService {
       throw const DeepSeekAiException('AI 返回为空');
     }
     return text;
+  }
+
+  /// 与 [chatMessages] 相同，但同时返回思考过程（reasoning_content）。
+  /// 用于助手回答时折叠展示「思考过程」。
+  Future<AiChatResult> chatDetailed({
+    required List<Map<String, String>> messages,
+    double temperature = 0.6,
+    bool jsonObject = false,
+  }) async {
+    if (!hasKey) {
+      throw const DeepSeekAiException('尚未配置 DeepSeek API Key');
+    }
+
+    final body = <String, dynamic>{
+      'model': model,
+      'messages': messages,
+      'max_tokens': maxTokens,
+      'thinking': {
+        'type': thinkingEnabled ? 'enabled' : 'disabled',
+      },
+    };
+    if (!thinkingEnabled) {
+      body['temperature'] = temperature;
+    }
+    if (jsonObject) {
+      body['response_format'] = {'type': 'json_object'};
+    }
+
+    final res = await _client.post(
+      Uri.parse('$baseUrl/chat/completions'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${apiKey.trim()}',
+      },
+      body: jsonEncode(body),
+    );
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw DeepSeekAiException(_friendlyError(res.statusCode, res.body));
+    }
+
+    final data = jsonDecode(res.body);
+    if (data is! Map<String, dynamic>) {
+      throw const DeepSeekAiException('AI 返回格式异常');
+    }
+    final choices = data['choices'];
+    if (choices is! List || choices.isEmpty) {
+      throw const DeepSeekAiException('AI 未返回内容');
+    }
+    final message = choices.first['message'];
+    final content = message is Map ? message['content']?.toString().trim() : null;
+    final text = content?.trim() ?? '';
+    if (text.isEmpty) {
+      throw const DeepSeekAiException('AI 返回为空');
+    }
+    final reasoningRaw =
+        message is Map ? message['reasoning_content']?.toString().trim() : null;
+    return AiChatResult(
+      content: text,
+      reasoning: (reasoningRaw == null || reasoningRaw.isEmpty) ? null : reasoningRaw,
+    );
   }
 
   /// 是否像在问本班数据（成绩/课表/学生等）——是则走「目录选型→按需加载」。
@@ -382,6 +455,91 @@ $_actionProposalInstructions
       {'role': 'user', 'content': question},
     ];
     return chatMessages(messages: messages, temperature: 0.55);
+  }
+
+  /// 与 [askSmart] 相同，但返回 [AiChatResult]（含思考过程）。
+  /// 供助手气泡折叠展示「思考过程」用。
+  Future<AiChatResult> askSmartDetailed({
+    required String question,
+    required List<Map<String, String>> history,
+    String? classDataSnapshot,
+    bool forceClassData = false,
+    String assistantName = MascotAssets.assistantName,
+    String assistantPersona = MascotAssets.assistantPersona,
+  }) {
+    final useClass = forceClassData ||
+        (classDataSnapshot != null &&
+            classDataSnapshot.isNotEmpty &&
+            looksLikeClassDataQuestion(question));
+    if (useClass) {
+      return askClassAssistantDetailed(
+        classDataSnapshot: classDataSnapshot ?? '',
+        history: history,
+        question: question,
+        assistantName: assistantName,
+        assistantPersona: assistantPersona,
+      );
+    }
+    return askGeneralChatDetailed(
+      history: history,
+      question: question,
+      assistantName: assistantName,
+      assistantPersona: assistantPersona,
+    );
+  }
+
+  /// 与 [askClassAssistant] 相同，但返回 [AiChatResult]（含思考过程）。
+  Future<AiChatResult> askClassAssistantDetailed({
+    required String classDataSnapshot,
+    required List<Map<String, String>> history,
+    required String question,
+    String assistantName = MascotAssets.assistantName,
+    String assistantPersona = MascotAssets.assistantPersona,
+  }) async {
+    final system = '''
+你是「Smart Class」里的班级助手「$assistantName」。性格：$assistantPersona。
+用亲切、简洁的中文回答班主任的问题；自称用「$assistantName」或「我」，不要自称其他固定动漫角色名。
+你只能根据下方「本机班级数据快照」作答，不要编造快照中没有的学生、分数或课程。
+若数据不足，明确说缺什么（例如尚未录入某次考试或缺少各科分数）。
+可以做汇总、对比、进步分析、本周课表查询、积分/考勤提醒等。
+一般回答尽量短小好读，必要时用 Markdown 分点（标题、加粗、列表均可）；不要用大段代码块包住整篇回复。
+若用户要求生成「家长会/班会」稿，可分点写完整提纲（主题、学情、典型、建议、流程），仍严禁编造快照没有的数据；缺数据处写「待补充」即可。
+
+$_actionProposalInstructions
+
+===== 本机班级数据快照 =====
+$classDataSnapshot
+===== 快照结束 =====
+''';
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': system},
+      ...history,
+      {'role': 'user', 'content': question},
+    ];
+    return chatDetailed(messages: messages, temperature: 0.35);
+  }
+
+  /// 与 [askGeneralChat] 相同，但返回 [AiChatResult]（含思考过程）。
+  Future<AiChatResult> askGeneralChatDetailed({
+    required List<Map<String, String>> history,
+    required String question,
+    String assistantName = MascotAssets.assistantName,
+    String assistantPersona = MascotAssets.assistantPersona,
+  }) async {
+    final system = '''
+你是「Smart Class」里的班级助手「$assistantName」。性格：$assistantPersona。
+用亲切、简洁的中文闲聊或答疑；自称「$assistantName」或「我」，不要自称其他固定动漫角色名。
+当前看不到本班学生/成绩/课表；若对方在问具体学生数据，请温柔提示可以说「课表/成绩/积分/谁」等关键词，我会自动查本班。
+回答尽量短、好读；可用简单 Markdown（加粗、列表），不要把整段包进代码块。
+
+$_actionProposalInstructions
+''';
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': system},
+      ...history,
+      {'role': 'user', 'content': question},
+    ];
+    return chatDetailed(messages: messages, temperature: 0.55);
   }
 
   /// 提案协议：只产出草稿 JSON，由 App 让用户确认后写入。

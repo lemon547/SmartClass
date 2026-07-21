@@ -85,7 +85,7 @@ class HomeTodoCard extends StatelessWidget {
             child: Container(
               height: 36,
               decoration: BoxDecoration(
-                color: AppTheme.fill.withValues(alpha: 0.55),
+                color: AppTheme.blue.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(
                   color: AppTheme.blue.withValues(alpha: 0.28),
@@ -360,7 +360,7 @@ class _VoiceTodoSheet extends StatefulWidget {
 
 class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
   static const _channel = MethodChannel('smart_class/voice_record');
-  static const _autoStopAfter = Duration(seconds: 10);
+  static const _autoStopAfter = Duration(seconds: 30);
 
   var _recording = false;
   var _busy = false;
@@ -556,7 +556,7 @@ class _VoiceTodoSheetState extends State<_VoiceTodoSheet> {
     }
     if (_busy) return '正在转写…';
     if (_raw.isNotEmpty) return '可点麦克风重录';
-    return '点麦克风开始说话';
+    return '点麦克风开始说话（最多 30 秒）';
   }
 
   @override

@@ -1704,6 +1704,7 @@ class SubjectStat {
     required this.label,
     required this.count,
     required this.average,
+    required this.median,
     required this.max,
     required this.min,
     required this.passCount,
@@ -1713,6 +1714,7 @@ class SubjectStat {
   final String label;
   final int count;
   final double average;
+  final double median;
   final double max;
   final double min;
   final int passCount;

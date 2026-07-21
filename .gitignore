@@ -13,6 +13,7 @@ _wl.bin
 *.pyc
 *.swp
 .DS_Store
+.claude_sc_*.png
 .atom/
 .build/
 .buildlog/

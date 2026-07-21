@@ -426,33 +426,38 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
       // 路由选型始终轻量；正式回答按问题难度自动决定是否深度
       final deep = DeepSeekAiService.looksLikeDeepQuestion(question) ||
           useAttach.isNotEmpty;
-      final reply = await ai.createService(forceThinking: deep).askSmart(
-            question: question,
-            history: trimmed,
-            classDataSnapshot: snap,
-            forceClassData: needClass && (snap?.isNotEmpty ?? false),
-            assistantName: MascotAssets.assistantName,
-            assistantPersona: MascotAssets.assistantPersona,
-          );
+      final result = await ai.createService(forceThinking: deep).askSmartDetailed(
+        question: question,
+        history: trimmed,
+        classDataSnapshot: snap,
+        forceClassData: needClass && (snap?.isNotEmpty ?? false),
+        assistantName: MascotAssets.assistantName,
+        assistantPersona: MascotAssets.assistantPersona,
+      );
       if (!mounted) return;
-      final parsed = ParsedAiReply.parse(reply);
-      final tag = StringBuffer();
+      final parsed = ParsedAiReply.parse(result.content);
+      // 参考数据：实际加载了哪些本机数据包（+ 路由降级提示）
+      final refs = <String>[];
       if (routeNotice != null && routeNotice.isNotEmpty) {
-        tag.writeln('（$routeNotice）');
-      } else if (needClass && loadedLabel.isNotEmpty) {
-        tag.writeln(
-          deep ? '（已查阅：$loadedLabel · 详细）' : '（已查阅：$loadedLabel）',
+        refs.add(routeNotice);
+      }
+      if (loadedLabel.isNotEmpty) {
+        refs.addAll(
+          loadedLabel
+              .split('、')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty),
         );
-      } else if (deep) {
-        tag.writeln('（详细分析）');
       }
       setState(() {
         _messages.add(
           AiChatMessage(
             role: 'assistant',
-            text: '${tag.toString()}${parsed.displayText}',
+            text: parsed.displayText,
             at: DateTime.now(),
             proposal: parsed.proposal,
+            thinking: result.reasoning,
+            references: refs,
           ),
         );
       });
@@ -735,22 +740,24 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final c in _chips)
-                  ActionChip(
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    label: Text(c, style: const TextStyle(fontSize: 12)),
-                    backgroundColor: Colors.white,
-                    side: BorderSide(color: AppTheme.separator),
-                    onPressed: _busy ? null : () => _send(c),
-                  ),
-              ],
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              itemCount: _chips.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final c = _chips[i];
+                return ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  label: Text(c, style: const TextStyle(fontSize: 12)),
+                  backgroundColor: Colors.white,
+                  side: BorderSide(color: AppTheme.separator),
+                  onPressed: _busy ? null : () => _send(c),
+                );
+              },
             ),
           ),
           Expanded(
@@ -776,6 +783,8 @@ class _AiAssistantChatScreenState extends State<AiAssistantChatScreen> {
                         mascotAsset: mascot,
                         attachmentLabels: m.attachmentLabels,
                         proposal: m.proposal,
+                        thinking: m.thinking,
+                        references: m.references,
                         onConfirmProposal: m.proposal == null
                             ? null
                             : () => _openProposal(i),
@@ -1120,6 +1129,8 @@ class _Bubble extends StatelessWidget {
     this.mascotAsset,
     this.attachmentLabels = const [],
     this.proposal,
+    this.thinking,
+    this.references = const [],
     this.onConfirmProposal,
     this.typing = false,
   });
@@ -1129,6 +1140,8 @@ class _Bubble extends StatelessWidget {
   final String? mascotAsset;
   final List<String> attachmentLabels;
   final AiActionProposal? proposal;
+  final String? thinking;
+  final List<String> references;
   final VoidCallback? onConfirmProposal;
   final bool typing;
 
@@ -1242,9 +1255,9 @@ class _Bubble extends StatelessWidget {
           margin: const EdgeInsets.only(bottom: 14, left: 48),
           constraints: BoxConstraints(maxWidth: maxW * 0.78),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: Color(0xFF95EC69),
-            borderRadius: BorderRadius.only(
+          decoration: BoxDecoration(
+            color: AppTheme.blue,
+            borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(18),
               topRight: Radius.circular(18),
               bottomLeft: Radius.circular(18),
@@ -1266,13 +1279,13 @@ class _Bubble extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.55),
+                          color: Colors.white.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(AppIcons.file, size: 14, color: AppTheme.blue),
+                            const Icon(AppIcons.file, size: 14, color: Colors.white),
                             const SizedBox(width: 4),
                             ConstrainedBox(
                               constraints: BoxConstraints(maxWidth: maxW * 0.5),
@@ -1283,6 +1296,7 @@ class _Bubble extends StatelessWidget {
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
@@ -1299,7 +1313,7 @@ class _Bubble extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     height: 1.45,
-                    color: Color(0xFF1C1C1E),
+                    color: Colors.white,
                   ),
                 ),
             ],
@@ -1329,14 +1343,22 @@ class _Bubble extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: const Color(0xFFF1F3F7),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFE8ECF1),
-                    ),
                   ),
-                  child: typing
-                      ? Text(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (references.isNotEmpty)
+                        _ReferencesChips(references: references),
+                      if (thinking != null && thinking!.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        _ThinkingPanel(thinking: thinking!),
+                        const SizedBox(height: 8),
+                      ] else if (references.isNotEmpty)
+                        const SizedBox(height: 8),
+                      if (typing)
+                        Text(
                           md,
                           style: TextStyle(
                             fontSize: 15,
@@ -1344,12 +1366,15 @@ class _Bubble extends StatelessWidget {
                             color: AppTheme.secondaryLabel,
                           ),
                         )
-                      : MarkdownBody(
+                      else
+                        MarkdownBody(
                           data: md,
                           selectable: true,
                           softLineBreak: true,
                           styleSheet: _mdStyle,
                         ),
+                    ],
+                  ),
                 ),
                 if (proposal != null && onConfirmProposal != null) ...[
                   const SizedBox(height: 8),
@@ -1402,6 +1427,117 @@ class _Bubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 助手回答顶部：「参考数据」chip 行——展示本次回答查阅了哪些本机数据包。
+class _ReferencesChips extends StatelessWidget {
+  const _ReferencesChips({required this.references});
+  final List<String> references;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 2),
+            child: Icon(
+              AppIcons.book,
+              size: 13,
+              color: AppTheme.tertiaryLabel,
+            ),
+          ),
+          for (final r in references)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppTheme.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                r,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.blue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 助手回答：可折叠的「思考过程」面板（展示模型 reasoning_content）。
+class _ThinkingPanel extends StatefulWidget {
+  const _ThinkingPanel({required this.thinking});
+  final String thinking;
+
+  @override
+  State<_ThinkingPanel> createState() => _ThinkingPanelState();
+}
+
+class _ThinkingPanelState extends State<_ThinkingPanel> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF6F7F9),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(AppIcons.sparkles, size: 14, color: AppTheme.tertiaryLabel),
+                  const SizedBox(width: 6),
+                  Text(
+                    _expanded ? '思考过程' : '查看思考过程',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.tertiaryLabel,
+                    ),
+                  ),
+                  const Spacer(),
+                  Transform.rotate(
+                    angle: _expanded ? 1.5707963 : 0,
+                    child: Icon(
+                      AppIcons.chevronRight,
+                      size: 14,
+                      color: AppTheme.tertiaryLabel,
+                    ),
+                  ),
+                ],
+              ),
+              if (_expanded) ...[
+                const SizedBox(height: 6),
+                Text(
+                  widget.thinking,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: AppTheme.secondaryLabel,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

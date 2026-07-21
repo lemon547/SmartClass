@@ -14,23 +14,26 @@
 
 ## 推荐本地开发启动
 
-**真机 USB 调试（推荐测 bug）：**
+用户说「启动」时，默认真机 + 模拟器同时开，遵循：
+
+`.cursor/skills/smartclass-dev-start/SKILL.md`
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/dev-run-dual.ps1
+```
+
+**仅真机 USB（测 bug）：**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/dev-run-phone.ps1
 ```
 
-**电脑模拟器（方便截图）：**
+**仅电脑模拟器（截图）：**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/dev-run-emulator.ps1
 ```
 
-**真机 + 模拟器同时开：**
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/dev-run-dual.ps1
-```
 
 ## 改 UI 后快速检查
 

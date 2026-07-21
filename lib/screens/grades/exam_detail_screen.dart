@@ -505,6 +505,37 @@ class _AnalysisTab extends StatelessWidget {
         ? null
         : totalStat.passRate;
 
+    Widget kpi(String label, String value, Color color) => Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppTheme.tertiaryLabel,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
     return ListView(
       padding: const EdgeInsets.only(bottom: 28, top: 8),
       children: [
@@ -513,22 +544,58 @@ class _AnalysisTab extends StatelessWidget {
           children: [
             GroupedTile(
               title: exam.category,
-              subtitle: '${exam.examDate} · ${exam.subjects.join('、')}',
+              subtitle:
+                  '${exam.examDate} · ${exam.subjects.join('、')} · 已录 ${ranked.length} 人',
             ),
-            GroupedTile(
-              title: '已录人数',
-              trailing: Text('${ranked.length} 人'),
-            ),
-            if (totalStat != null && totalStat.count > 0)
-              GroupedTile(
-                title: '总分均分',
-                trailing: Text(ExamDetailScreen.fmt(totalStat.average)),
-              ),
-            if (passRate != null)
-              GroupedTile(
-                title: '及格率',
-                trailing: Text('${(passRate * 100).toStringAsFixed(0)}%'),
-              ),
+            if (totalStat != null && totalStat.count > 0) ...[
+              const SizedBox(height: 10),
+              ...(() {
+                final ts = totalStat!;
+                final totalFull = exam.fullScore * exam.subjects.length;
+                final excellentLine = totalFull * 0.85;
+                final excellentRate = ranked.isEmpty
+                    ? 0.0
+                    : ranked
+                            .where((s) => s.total >= excellentLine)
+                            .length /
+                        ranked.length;
+                return [
+                  Row(
+                    children: [
+                      kpi('均分', ExamDetailScreen.fmt(ts.average),
+                          AppTheme.blue),
+                      const SizedBox(width: 8),
+                      kpi('中位数', ExamDetailScreen.fmt(ts.median),
+                          AppTheme.blue),
+                      const SizedBox(width: 8),
+                      kpi('最高', ExamDetailScreen.fmt(ts.max),
+                          const Color(0xFF34C759)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      kpi('最低', ExamDetailScreen.fmt(ts.min),
+                          const Color(0xFFFF9500)),
+                      const SizedBox(width: 8),
+                      kpi(
+                        '及格率',
+                        passRate != null
+                            ? '${(passRate * 100).toStringAsFixed(0)}%'
+                            : '—',
+                        AppTheme.blue,
+                      ),
+                      const SizedBox(width: 8),
+                      kpi(
+                        '优秀率',
+                        '${(excellentRate * 100).toStringAsFixed(0)}%',
+                        const Color(0xFF5B45B0),
+                      ),
+                    ],
+                  ),
+                ];
+              })(),
+            ],
           ],
         ),
         const SizedBox(height: 8),

@@ -16,9 +16,9 @@ class TtStyle {
   static const todoDot = Color(0xFFFF3B30);
   static const cardBorder = Color(0xFFE8E8E8);
 
-  static const periodW = 40.0;
-  static const cellH = 104.0;
-  static const dayMinW = 58.0;
+  static const periodW = 46.0;
+  static const cellH = 84.0;
+  static const dayMinW = 60.0;
   static const tabH = 40.0;
   static const toolbarH = 56.0;
   static const gridLine = Color(0xFFF0F0F0);

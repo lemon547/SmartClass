@@ -87,7 +87,7 @@ class _TodosScreenState extends State<TodosScreen> {
     final pending = ctrl.todos.where((t) => !t.done).length;
 
     return Scaffold(
-      backgroundColor: AppTheme.bg,
+      backgroundColor: AppTheme.surface,
       appBar: PageAppBar(
         title: const Text('待办'),
         actions: [
@@ -129,16 +129,27 @@ class _TodosScreenState extends State<TodosScreen> {
           Expanded(
             child: items.isEmpty
                 ? Center(
-                    child: Text(
-                      _filter == 2
-                          ? '还没有已完成的待办'
-                          : _filter == 1
-                              ? '没有未完成待办'
-                              : '还没有待办，上面输入一条试试',
-                      style: TextStyle(
-                        color: AppTheme.tertiaryLabel,
-                        fontSize: 15,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          AppIcons.circleCheck,
+                          size: 44,
+                          color: AppTheme.quaternaryLabel,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _filter == 2
+                              ? '还没有已完成的待办'
+                              : _filter == 1
+                                  ? '没有未完成待办'
+                                  : '还没有待办，上面输入一条试试',
+                          style: TextStyle(
+                            color: AppTheme.tertiaryLabel,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.builder(
@@ -169,6 +180,10 @@ class _TodosScreenState extends State<TodosScreen> {
                               decoration: BoxDecoration(
                                 color: AppTheme.surface,
                                 borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: AppTheme.separator
+                                      .withValues(alpha: 0.6),
+                                ),
                               ),
                               clipBehavior: Clip.antiAlias,
                               child: SlidableAutoCloseBehavior(
@@ -217,7 +232,7 @@ class _FilterTabs extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: AppTheme.fill,
+        color: AppTheme.separator.withValues(alpha: 0.28),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -225,10 +240,10 @@ class _FilterTabs extends StatelessWidget {
           for (var i = 0; i < labels.length; i++)
             Expanded(
               child: Material(
-                color: index == i ? AppTheme.surface : Colors.transparent,
+                color: index == i
+                    ? AppTheme.blue.withValues(alpha: 0.10)
+                    : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
-                elevation: index == i ? 0.4 : 0,
-                shadowColor: Colors.black26,
                 child: InkWell(
                   onTap: () => onChanged(i),
                   borderRadius: BorderRadius.circular(8),
@@ -294,7 +309,7 @@ class _TodoTile extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         color: todo.done
-                            ? AppTheme.tertiaryLabel
+                            ? AppTheme.label.withValues(alpha: 0.45)
                             : AppTheme.label,
                         decoration: todo.done
                             ? TextDecoration.lineThrough
@@ -306,7 +321,7 @@ class _TodoTile extends StatelessWidget {
                       time,
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.quaternaryLabel,
+                        color: AppTheme.tertiaryLabel,
                       ),
                     ),
                   ],

@@ -2440,6 +2440,7 @@ class ClassController extends ChangeNotifier {
           label: label,
           count: 0,
           average: 0,
+          median: 0,
           max: 0,
           min: 0,
           passCount: 0,
@@ -2455,10 +2456,16 @@ class ClassController extends ChangeNotifier {
         if (v < min) min = v;
         if (v >= passLine) pass++;
       }
+      final sorted = [...values]..sort();
+      final mid = sorted.length ~/ 2;
+      final median = sorted.length.isEven
+          ? (sorted[mid - 1] + sorted[mid]) / 2
+          : sorted[mid];
       return SubjectStat(
         label: label,
         count: values.length,
         average: sum / values.length,
+        median: median,
         max: max,
         min: min,
         passCount: pass,

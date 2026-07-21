@@ -25,7 +25,7 @@ class CourseCard extends StatelessWidget {
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(5, 7, 5, 5),
+          padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
           decoration: BoxDecoration(
             color: tint.$1,
             borderRadius: BorderRadius.circular(8),
@@ -40,13 +40,13 @@ class CourseCard extends StatelessWidget {
                 overflow: TextOverflow.fade,
                 style: TextStyle(
                   color: tint.$2,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   height: 1.15,
                 ),
               ),
               if (classLine.isNotEmpty) ...[
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   classLine,
                   maxLines: 2,
@@ -54,7 +54,7 @@ class CourseCard extends StatelessWidget {
                   overflow: TextOverflow.visible,
                   style: TextStyle(
                     color: tint.$2.withValues(alpha: 0.82),
-                    fontSize: 11,
+                    fontSize: 10,
                     height: 1.2,
                     fontWeight: FontWeight.w500,
                   ),
@@ -68,7 +68,7 @@ class CourseCard extends StatelessWidget {
                 maxLines: 1,
                 style: TextStyle(
                   color: tint.$2.withValues(alpha: 0.65),
-                  fontSize: 10,
+                  fontSize: 9,
                   height: 1.1,
                 ),
               ),

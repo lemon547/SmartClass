@@ -282,20 +282,62 @@ class _PeriodSide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final range = period.timeRange;
-    final start = range.isEmpty ? '' : range.split('-').first.trim();
+    String start = '';
+    String end = '';
+    if (range.isNotEmpty) {
+      final parts = range.split('-');
+      start = parts.first.trim();
+      if (parts.length > 1) end = parts[1].trim();
+    }
+    if (start.isEmpty && end.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Center(
+          child: Text(
+            '${period.period}',
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: TtStyle.muted,
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Center(
-        child: Text(
-          start.isNotEmpty ? start : '${period.period}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: TtStyle.muted,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (start.isNotEmpty)
+              Text(
+                start,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: TtStyle.muted,
+                ),
+              ),
+            if (end.isNotEmpty) ...[
+              const SizedBox(height: 1),
+              Text(
+                end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 9,
+                  color: TtStyle.muted.withValues(alpha: 0.62),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
