@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/grades/exam_detail_screen.dart';
+import 'package:smart_class/screens/grades/exam_hub_screen.dart';
 import 'package:smart_class/screens/students/honor_editor.dart';
 import 'package:smart_class/screens/students/student_edit_screen.dart';
 import 'package:smart_class/services/file_share.dart';
@@ -218,7 +219,7 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                       header: '成绩 · ${grades.length}',
                       footer: grades.isEmpty
                           ? '该生尚未录入考试成绩'
-                          : '点进查看本场考试分析',
+                          : '点进查看本场考试功能',
                       children: [
                         if (grades.isEmpty)
                           Padding(
@@ -240,11 +241,9 @@ class _StudentDetailScreenState extends State<StudentDetailScreen> {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              onTap: () => Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      ExamDetailScreen(examId: exam.id),
-                                ),
+                              onTap: () => ExamHubScreen.push(
+                                context,
+                                examId: exam.id,
                               ),
                             ),
                       ],

@@ -23,18 +23,24 @@ class TeachingScreen extends StatelessWidget {
     final ctrl = context.watch<ClassController>();
 
     final toolTiles = <Widget>[
+      GroupedTile(
+        title: '课表',
+        subtitle: '我的课表与班级课表',
+        leading: Icon(AppIcons.calendar, color: AppTheme.blue),
+        onTap: () => _push(context, const TeacherTimetableScreen()),
+      ),
       if (ctrl.isFeatureVisible(ClassFeatureIds.grades))
         GroupedTile(
           title: '成绩',
           subtitle: '考试与成绩录入',
-          leading: Icon(AppIcons.chart, color: const Color(0xFFFF9500)),
+          leading: const Icon(AppIcons.chart, color: Color(0xFFFF9500)),
           onTap: () => _push(context, const GradesScreen()),
         ),
       if (ctrl.isFeatureVisible(ClassFeatureIds.seating))
         GroupedTile(
           title: '座位表',
           subtitle: '本班座位安排',
-          leading: Icon(AppIcons.users, color: const Color(0xFF34C759)),
+          leading: const Icon(AppIcons.users, color: Color(0xFF34C759)),
           onTap: () => _push(context, const SeatingScreen()),
         ),
     ];
@@ -84,36 +90,9 @@ class TeachingScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             GroupedSection(
-              header: '课表',
               padding: EdgeInsets.zero,
-              children: [
-                GroupedTile(
-                  title: '我的课表',
-                  subtitle: '各班本人授课安排',
-                  leading: Icon(AppIcons.calendar, color: AppTheme.blue),
-                  onTap: () => _push(
-                    context,
-                    const TeacherTimetableScreen(initialTab: 0),
-                  ),
-                ),
-                GroupedTile(
-                  title: '班级课表',
-                  subtitle: '当前班整周课程',
-                  leading: Icon(AppIcons.grid, color: const Color(0xFF32ADE6)),
-                  onTap: () => _push(
-                    context,
-                    const TeacherTimetableScreen(initialTab: 1),
-                  ),
-                ),
-              ],
+              children: toolTiles,
             ),
-            if (toolTiles.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              GroupedSection(
-                padding: EdgeInsets.zero,
-                children: toolTiles,
-              ),
-            ],
           ],
         ),
       ),

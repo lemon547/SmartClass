@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:smart_class/models/models.dart';
 import 'package:smart_class/providers/class_controller.dart';
 import 'package:smart_class/screens/grades/ai_exam_import_screen.dart';
-import 'package:smart_class/screens/grades/exam_detail_screen.dart';
+import 'package:smart_class/screens/grades/exam_hub_screen.dart';
 import 'package:smart_class/screens/grades/exam_edit_screen.dart';
 import 'package:smart_class/theme/app_icons.dart';
 import 'package:smart_class/theme/app_theme.dart';
@@ -188,13 +188,10 @@ class _GradesScreenState extends State<GradesScreen> {
     final id = await ExamEditScreen.push(context);
     if (id == null || !context.mounted) return;
     if (id == ExamEditScreen.deletedToken) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ExamDetailScreen(
-          examId: id,
-          promptEnterScores: true,
-        ),
-      ),
+    await ExamHubScreen.push(
+      context,
+      examId: id,
+      promptEnterScores: true,
     );
   }
 
@@ -278,11 +275,7 @@ class _ExamTile extends StatelessWidget {
         size: 20,
         color: AppTheme.quaternaryLabel,
       ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ExamDetailScreen(examId: exam.id),
-        ),
-      ),
+      onTap: () => ExamHubScreen.push(context, examId: exam.id),
     );
   }
 }
