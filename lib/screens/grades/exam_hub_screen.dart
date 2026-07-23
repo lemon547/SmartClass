@@ -149,39 +149,37 @@ class _ExamHubScreenState extends State<ExamHubScreen> {
                   title: '备注',
                   subtitle: exam.note.trim(),
                 ),
-              if (totalStat != null && totalStat.count > 0) ...[
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      _KpiChip(
-                        label: '均分',
-                        value: ExamDetailScreen.fmt(totalStat.average),
-                        color: AppTheme.blue,
-                      ),
-                      const SizedBox(width: 8),
-                      _KpiChip(
-                        label: '最高',
-                        value: ExamDetailScreen.fmt(totalStat.max),
-                        color: const Color(0xFF34C759),
-                      ),
-                      const SizedBox(width: 8),
-                      _KpiChip(
-                        label: '及格率',
-                        value:
-                            '${(totalStat.passRate * 100).toStringAsFixed(0)}%',
-                        color: const Color(0xFF5B45B0),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
-          if (ranked.isNotEmpty && stats.any((s) => s.label != '总分' && s.count > 0))
+          if (totalStat != null && totalStat.count > 0)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  _KpiChip(
+                    label: '均分',
+                    value: ExamDetailScreen.fmt(totalStat.average),
+                    color: AppTheme.blue,
+                  ),
+                  const SizedBox(width: 8),
+                  _KpiChip(
+                    label: '最高',
+                    value: ExamDetailScreen.fmt(totalStat.max),
+                    color: const Color(0xFF34C759),
+                  ),
+                  const SizedBox(width: 8),
+                  _KpiChip(
+                    label: '及格率',
+                    value: '${(totalStat.passRate * 100).toStringAsFixed(0)}%',
+                    color: const Color(0xFF5B45B0),
+                  ),
+                ],
+              ),
+            ),
+          if (ranked.isNotEmpty &&
+              stats.any((s) => s.label != '总分' && s.count > 0))
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
               child: ChartCard(
                 title: '各科均分预览',
                 height: 160,
@@ -390,7 +388,7 @@ class _KpiChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(12),
@@ -400,15 +398,22 @@ class _KpiChip extends StatelessWidget {
           children: [
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11, color: AppTheme.tertiaryLabel),
             ),
             const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: color,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
               ),
             ),
           ],

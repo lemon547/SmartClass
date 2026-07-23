@@ -59,11 +59,6 @@ class TeachingScreen extends StatelessWidget {
                 letterSpacing: -0.3,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '课表、成绩与座位等教学工具',
-              style: TextStyle(fontSize: 13, color: AppTheme.tertiaryLabel),
-            ),
             const SizedBox(height: 10),
             InkWell(
               onTap: () => showClassSwitcherSheet(context),

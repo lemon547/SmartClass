@@ -79,7 +79,11 @@ Future<void> showClassSwitcherSheet(BuildContext context) async {
                       subtitle:
                           c.roleLabel.isEmpty ? null : Text(c.roleLabel),
                       trailing: selected
-                          ? Icon(AppIcons.circleCheck, color: AppTheme.blue)
+                          ? Icon(
+                              AppIcons.check,
+                              color: AppTheme.blue,
+                              size: 28,
+                            )
                           : null,
                       onTap: () async {
                         Navigator.pop(ctx);

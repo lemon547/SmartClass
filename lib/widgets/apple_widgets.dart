@@ -170,6 +170,7 @@ class GroupedSection extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (var i = 0; i < children.length; i++) ...[
                   if (i > 0)

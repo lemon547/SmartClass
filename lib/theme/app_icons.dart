@@ -30,6 +30,7 @@ abstract final class AppIcons {
   static const IconData clock = LucideIcons.clock;
   static const IconData circle = LucideIcons.circle;
   static const IconData circleCheck = LucideIcons.circleCheck;
+  static const IconData check = LucideIcons.check;
   static const IconData sliders = LucideIcons.slidersHorizontal;
   static const IconData alert = LucideIcons.circleAlert;
   static const IconData gift = LucideIcons.gift;

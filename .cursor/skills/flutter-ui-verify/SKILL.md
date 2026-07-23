@@ -79,31 +79,12 @@ powershell -ExecutionPolicy Bypass -File scripts/dev-run.ps1
 | 用 Android Studio 跑且未热重启 | 换 `dev-run.ps1` 或 IDE Hot Restart |
 | 改了 assets / pubspec | 必须完全停止再 `flutter run` |
 
-## 代码审查清单（改 UI 时顺带看）
+## Agent 回复模板（必须带一行）
 
+> 已触发热重启（dev-run 自动 R）/ 请在 Flutter 终端按 R / 已重新启动 dev-run。
+
+## 相关脚本
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/flutter-ui-refresh.ps1
 ```
-- [ ] 展示数据来自 watch 而非只 read 一次
-- [ ] 写操作后 controller 调用了 notifyListeners 或重新 load
-- [ ] 无仅依赖 hot reload 才能生效的全局/静态缓存
-- [ ] 删除的 UI 元素在代码里已无引用
-```
-
-## 禁止
-
-- 不得假设「保存即生效」而不说明是否需要热重启
-- 不得跳过 analyze 直接说「刷新好了」
-- 不得在未验证的情况下让用户自己猜要不要重启
-
-## 回复模板
-
-成功（dev-run 在跑）：
-
-> 已 analyze 通过；dev-run 监视器会自动热重启，约 2 秒后界面应已更新。
-
-需用户操作：
-
-> 代码已改并通过 analyze。请在 flutter 终端按 **R** 热重启（或 IDE 点 Hot Restart），UI 结构改动必须热重启才能看到效果。
-
-未启动应用：
-
-> 已启动 `scripts/dev-run.ps1`（需模拟器/真机已连接）。首次编译约 3–5 分钟，之后保存 `lib/` 会自动热重启。
